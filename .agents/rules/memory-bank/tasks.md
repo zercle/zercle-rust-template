@@ -16,67 +16,57 @@
 ### Test Organization
 
 **Unit Tests:**
-- Location: Same package as implementation (`*_test.go`)
+- Location: Same module as implementation (`#[cfg(test)]` module)
 - Scope: Single function or method
 - Dependencies: Mock external dependencies
-- Examples: `internal/domain/user/usecase/usecase_test.go`
+- Examples: `src/domain/user/service.rs` (test module)
 
 **Integration Tests:**
-- Location: `test/integration/`
+- Location: `tests/` directory
 - Scope: End-to-end API flows
-- Dependencies: Real database (testcontainers)
-- Examples: `test/integration/api_test.go`
+- Dependencies: Real database (testcontainers-rs)
+- Examples: `tests/integration/api_test.rs`
 
 **Mock Tests:**
-- Location: `test/mock/`
+- Location: `tests/mock/` or inline in test modules
 - Scope: Database interactions
-- Dependencies: SQL mocks
-- Examples: `test/mock/sqlmock_test.go`
+- Dependencies: Mock implementations
+- Examples: `tests/mock/db_test.rs`
 
 ### Test Structure Template
 
-```go
-func Test<FunctionName>_<Scenario>_<ExpectedResult>(t *testing.T) {
+```rust
+#[tokio::test]
+async fn test_login_valid_credentials_returns_token() {
     // Arrange
-    ctx := context.Background()
-    mockRepo := NewMockUserRepository(ctrl)
-    useCase := NewUserUseCase(mockRepo, cfg, argon2Cfg, log)
-    
+    let ctx = Context::new();
+    let mock_repo = MockUserRepository::new();
+    let use_case = UserService::new(mock_repo, config, argon2_config, log);
+
     // Setup expectations
-    mockRepo.EXPECT().GetByEmail(ctx, email).Return(nil, repository.ErrUserNotFound)
-    
+    mock_repo
+        .expect_get_by_email()
+        .returning(|_| Ok(None));
+
     // Act
-    result, err := useCase.Register(ctx, request)
-    
+    let result = use_case.login(ctx, request).await;
+
     // Assert
-    assert.NoError(t, err)
-    assert.NotNil(t, result)
-    assert.NotEmpty(t, result.Token)
+    assert!(result.is_ok());
+    assert!(result.unwrap().token.is_some());
 }
 ```
 
 ### Table-Driven Tests
 
-```go
-func TestValidateEmail(t *testing.T) {
-    tests := []struct {
-        name    string
-        email   string
-        wantErr bool
-    }{
-        {"valid email", "user@example.com", false},
-        {"invalid format", "invalid", true},
-        {"empty", "", true},
-    }
-    
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            err := ValidateEmail(tt.email)
-            if (err != nil) != tt.wantErr {
-                t.Errorf("ValidateEmail() error = %v, wantErr %v", err, tt.wantErr)
-            }
-        })
-    }
+```rust
+#[rstest]
+#[case("user@example.com", false)]
+#[case("invalid", true)]
+#[case("", true)]
+fn test_validate_email(#[case] email: &str, #[case] want_err: bool) {
+    let result = validate_email(email);
+    assert_eq!(result.is_err(), want_err);
 }
 ```
 
@@ -84,33 +74,47 @@ func TestValidateEmail(t *testing.T) {
 
 **All tests:**
 ```bash
-go test ./...
+cargo test
 ```
 
 **Specific package:**
 ```bash
-go test ./internal/domain/user/usecase/
+cargo test --package zercle_rust_template
+```
+
+**Specific module:**
+```bash
+cargo test --lib domain::user::service
 ```
 
 **With coverage:**
 ```bash
-go test -cover ./...
+cargo tarpaulin --out Html
 ```
 
 **Coverage report:**
 ```bash
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
+cargo llvm-cov --html
 ```
 
 **Integration tests:**
 ```bash
-go test -tags=integration ./test/integration/
+cargo test --test integration
+```
+
+**Single test:**
+```bash
+cargo test test_login_valid_credentials
+```
+
+**Test with output:**
+```bash
+cargo test -- --nocapture
 ```
 
 ### Test Coverage Goals
 - **Critical business logic:** >90%
-- **Domain use cases:** >80%
+- **Domain services:** >80%
 - **Handlers:** >70%
 - **Infrastructure:** >60%
 - **Overall:** >70%
@@ -124,6 +128,7 @@ go test -tags=integration ./test/integration/
 - Poor naming or unclear intent
 - Performance bottlenecks identified
 - Adding new features becomes difficult
+- Clippy warnings
 
 ### Refactoring Checklist
 - [ ] Ensure tests exist and pass
@@ -132,6 +137,7 @@ go test -tags=integration ./test/integration/
 - [ ] Make small, incremental changes
 - [ ] Run tests after each change
 - [ ] Verify behavior unchanged
+- [ ] Run `cargo clippy` and fix warnings
 - [ ] Update documentation if needed
 - [ ] Commit with clear message
 
@@ -142,11 +148,11 @@ go test -tags=integration ./test/integration/
 - Give it a descriptive name
 - Replace original code with function call
 
-**Extract Interface:**
+**Extract Trait:**
 - Identify common behavior
-- Create interface with methods
-- Implement interface in concrete types
-- Update dependencies to use interface
+- Create trait with methods
+- Implement trait in concrete types
+- Update dependencies to use trait
 
 **Replace Magic Numbers:**
 - Identify constants in code
@@ -156,7 +162,7 @@ go test -tags=integration ./test/integration/
 
 **Simplify Conditional:**
 - Use guard clauses
-- Replace nested if-else with switch
+- Replace nested if-else with match
 - Extract complex conditions to named functions
 
 **Remove Dead Code:**
@@ -168,38 +174,46 @@ go test -tags=integration ./test/integration/
 ### Refactoring Example
 
 **Before:**
-```go
-func (h *UserHandler) Register(c echo.Context) error {
-    var req request.RegisterUser
-    if err := c.Bind(&req); err != nil {
-        return c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
+```rust
+pub async fn register(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterUser>,
+) -> Result<Json<LoginResponse>, ApiError> {
+    if req.email.is_empty() {
+        return Err(ApiError::Validation("Email is required".to_string()));
     }
-    if err := h.validator.Struct(req); err != nil {
-        return c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
+    if req.full_name.is_empty() {
+        return Err(ApiError::Validation("Full name is required".to_string()));
+    }
+    if req.password.is_empty() {
+        return Err(ApiError::Validation("Password is required".to_string()));
     }
     // ... more code
 }
 ```
 
 **After:**
-```go
-func (h *UserHandler) Register(c echo.Context) error {
-    req, err := h.bindAndValidateRequest(c)
-    if err != nil {
-        return h.errorResponse(c, http.StatusBadRequest, err)
-    }
+```rust
+pub async fn register(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterUser>,
+) -> Result<Json<LoginResponse>, ApiError> {
+    validate_register_request(&req)?;
+
     // ... more code
 }
 
-func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterUser, error) {
-    var req request.RegisterUser
-    if err := c.Bind(&req); err != nil {
-        return nil, err
+fn validate_register_request(req: &RegisterUser) -> Result<(), ApiError> {
+    if req.email.is_empty() {
+        return Err(ApiError::Validation("Email is required".to_string()));
     }
-    if err := h.validator.Struct(req); err != nil {
-        return nil, err
+    if req.full_name.is_empty() {
+        return Err(ApiError::Validation("Full name is required".to_string()));
     }
-    return &req, nil
+    if req.password.is_empty() {
+        return Err(ApiError::Validation("Password is required".to_string()));
+    }
+    Ok(())
 }
 ```
 
@@ -207,30 +221,35 @@ func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterU
 
 ### General Review
 - [ ] Code follows project coding standards
-- [ ] Naming is clear and descriptive
+- [ ] Naming is clear and descriptive (snake_case for functions, PascalCase for types)
 - [ ] Functions are small and focused
 - [ ] No code duplication
 - [ ] Comments explain "why", not "what"
 - [ ] No commented-out code left behind
-- [ ] Proper error handling throughout
-- [ ] Logging at appropriate levels
+- [ ] Proper error handling throughout (Result<T, E>)
+- [ ] Logging at appropriate levels with tracing
+- [ ] No `unwrap()` or `expect()` in production code
+- [ ] Clippy warnings addressed
 
 ### Architecture Review
 - [ ] Follows clean architecture principles
 - [ ] Dependencies point inward
 - [ ] Domain logic isolated from infrastructure
-- [ ] Interfaces used for external dependencies
+- [ ] Traits used for external dependencies
 - [ ] No circular dependencies
 - [ ] Proper separation of concerns
+- [ ] Async/await used appropriately
+- [ ] Ownership and borrowing handled correctly
 
 ### Security Review
 - [ ] Input validation on all user inputs
-- [ ] SQL injection prevention (SQLC handles this)
+- [ ] SQL injection prevention (sqlx handles this)
 - [ ] Authentication/authorization enforced
 - [ ] Sensitive data not logged
 - [ ] Secrets not hardcoded
 - [ ] CORS properly configured
 - [ ] Rate limiting applied
+- [ ] Passwords hashed with argon2
 
 ### Performance Review
 - [ ] No N+1 query problems
@@ -239,18 +258,20 @@ func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterU
 - [ ] No unnecessary allocations
 - [ ] Efficient data structures used
 - [ ] Caching considered where appropriate
+- [ ] Async operations used for I/O
 
 ### Testing Review
 - [ ] Tests added for new functionality
 - [ ] Tests cover edge cases
 - [ ] Tests are readable and maintainable
-- [ ] Mocks used appropriately
+- [ ] Mocks used appropriately (mockall)
 - [ ] Test coverage adequate
 - [ ] Integration tests included for API changes
+- [ ] Async tests use `#[tokio::test]`
 
 ### Documentation Review
-- [ ] Godoc comments on exported functions
-- [ ] API documentation updated (Swagger)
+- [ ] Rustdoc comments on public items (`///`)
+- [ ] API documentation updated (OpenAPI/utoipa)
 - [ ] README updated if needed
 - [ ] Architecture docs updated if major change
 - [ ] Migration files documented
@@ -258,7 +279,7 @@ func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterU
 ### Specific Domain Reviews
 
 **User Domain:**
-- [ ] Password hashing with Argon2id
+- [ ] Password hashing with argon2
 - [ ] Email uniqueness enforced
 - [ ] JWT token properly generated
 - [ ] User ownership verified
@@ -271,7 +292,7 @@ func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterU
 
 **Database:**
 - [ ] Migration files created
-- [ ] SQLC queries updated
+- [ ] sqlx queries updated
 - [ ] Indexes added if needed
 - [ ] Foreign keys defined
 
@@ -286,7 +307,7 @@ func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterU
    - Note request/response data
 
 2. **Gather Information**
-   - Check application logs
+   - Check application logs with tracing
    - Review database state
    - Examine request/response
    - Check configuration values
@@ -312,9 +333,18 @@ func (h *UserHandler) bindAndValidateRequest(c echo.Context) (*request.RegisterU
 ### Debugging Tools
 
 **Logging:**
-```go
-log.Debug("Processing request", "user_id", userID, "task_id", taskID)
-log.Error("Failed to update task", "error", err, "task_id", taskID)
+```rust
+tracing::debug!(
+    user_id = %user_id,
+    task_id = %task_id,
+    "Processing request"
+);
+
+tracing::error!(
+    error = %err,
+    task_id = %task_id,
+    "Failed to update task"
+);
 ```
 
 **Structured Logging:**
@@ -322,15 +352,18 @@ log.Error("Failed to update task", "error", err, "task_id", taskID)
 - Use consistent field names
 - Log at appropriate levels
 - Include context for errors
+- Use `tracing::instrument!` for function tracing
 
 **Error Inspection:**
-```go
-if err != nil {
-    log.Error("Operation failed", 
-        "error", err,
-        "operation", "createUser",
-        "email", req.Email)
-    // Use errors.Is() and errors.As() for error checking
+```rust
+if let Err(err) = result {
+    tracing::error!(
+        error = %err,
+        operation = "create_user",
+        email = %req.email,
+        "Operation failed"
+    );
+    // Use error.kind() or error.downcast_ref() for error checking
 }
 ```
 
@@ -366,38 +399,54 @@ curl -v http://localhost:3000/api/v1/tasks
 - Verify connection string
 - Check connection pool settings
 - Review firewall rules
+- Check sqlx connection configuration
 
 **Authentication Failures:**
 - Verify JWT secret matches
 - Check token expiration
 - Validate token format
 - Review middleware configuration
+- Check jsonwebtoken claims
 
 **Performance Issues:**
 - Check database query performance
 - Review connection pool settings
-- Profile with pprof
+- Profile with tokio-console or flamegraph
 - Check for N+1 queries
+- Review async task spawning
 
 **Test Failures:**
-- Run tests with verbose output
+- Run tests with verbose output (`-- --nocapture`)
 - Check test data setup
 - Verify mock expectations
 - Review test isolation
+- Check async test setup
+
+**Compilation Errors:**
+- Check ownership and borrowing
+- Verify trait bounds
+- Review async function signatures
+- Check lifetime annotations
+- Use `cargo check` for early errors
 
 ### Adding Debug Logging
 
 **Before Production:**
-```go
-func (uc *userUseCase) Login(ctx context.Context, req request.LoginUser) (*userResponse.LoginResponse, error) {
-    log.Debug("Login attempt", "email", req.Email)
-    
-    userModel, err := uc.repo.GetByEmail(ctx, req.Email)
-    if err != nil {
-        log.Error("User not found", "email", req.Email, "error", err)
-        return nil, ErrInvalidCredentials
+```rust
+#[tracing::instrument(skip(self))]
+pub async fn login(
+    &self,
+    ctx: Context,
+    req: LoginUser,
+) -> Result<LoginResponse, UserError> {
+    tracing::debug!(email = %req.email, "Login attempt");
+
+    let user_model = self.repo.get_by_email(&ctx, &req.email).await?;
+    if user_model.is_none() {
+        tracing::error!(email = %req.email, "User not found");
+        return Err(UserError::InvalidCredentials);
     }
-    
+
     // ... rest of code
 }
 ```
@@ -406,43 +455,44 @@ func (uc *userUseCase) Login(ctx context.Context, req request.LoginUser) (*userR
 - Remove debug-level logs
 - Keep error and warn logs
 - Ensure no sensitive data in logs
+- Set appropriate log level in production
 
 ### Performance Debugging
 
-**Enable Profiling:**
-```go
-import _ "net/http/pprof"
+**Enable Tokio Console:**
+```rust
+use tokio_console::console_layer;
 
-// Add to routes
-e.GET("/debug/pprof/*", echo.WrapHandler(http.DefaultServeMux))
+#[tokio::main]
+async fn main() {
+    console_layer().init();
+    // ... rest of code
+}
 ```
 
-**Profile CPU:**
+**Profile with Flamegraph:**
 ```bash
-go tool pprof http://localhost:3000/debug/pprof/profile
+cargo install flamegraph
+cargo flamegraph --bin zercle-rust-template
 ```
 
 **Profile Memory:**
 ```bash
-go tool pprof http://localhost:3000/debug/pprof/heap
-```
-
-**Profile Goroutines:**
-```bash
-go tool pprof http://localhost:3000/debug/pprof/goroutine
+cargo install heaptrack
+heaptrack ./target/release/zercle-rust-template
 ```
 
 ### Integration Testing Debugging
 
 **Run Single Test:**
 ```bash
-go test -v -run TestLogin ./test/integration/
+cargo test --test integration test_login -- --nocapture
 ```
 
 **Keep Database Running:**
-```bash
-# Add this to test
-testcontainers.CleanupContainer(t, container)
+```rust
+// Testcontainers automatically cleans up
+// Use --nocapture to see logs
 ```
 
 **View Test Database:**
@@ -460,55 +510,59 @@ docker exec -it <container_id> psql -U postgres -d postgres
 
 1. **Create Domain Structure**
    ```
-   internal/domain/<domain>/
-     entity/
-     handler/
-     repository/
-     usecase/
-     request/
-     response/
-     mock/
-     interface.go
+   src/domain/<domain>/
+     entity.rs
+     handler.rs
+     repository.rs
+     service.rs
+     request.rs
+     response.rs
+     mock.rs
+     mod.rs
    ```
 
 2. **Define Entity**
-   - Create entity in `entity/<domain>.go`
+   - Create entity in `entity.rs`
    - Add UUID primary key
    - Add timestamps (created_at, updated_at)
    - Add business logic methods
+   - Implement serde Serialize/Deserialize
 
-3. **Create Interface**
-   - Define Repository, Service, Handler interfaces
+3. **Create Trait**
+   - Define Repository, Service traits
    - Follow existing patterns
    - Use domain-specific types
+   - Add async methods
 
 4. **Implement Repository**
-   - Create SQL queries in `sqlc/queries/<domain>.sql`
-   - Run `sqlc generate` to create types
-   - Implement repository interface
+   - Create SQL queries with sqlx macros
+   - Implement repository trait
    - Handle errors appropriately
+   - Use async/await
 
-5. **Implement UseCase**
+5. **Implement Service**
    - Create business logic
-   - Define domain-specific errors
+   - Define domain-specific errors with thiserror
    - Implement validation rules
-   - Add logging
+   - Add logging with tracing
 
 6. **Implement Handler**
    - Create HTTP handlers
    - Map request/response DTOs
    - Handle errors
    - Register routes
+   - Use Axum handler patterns
 
 7. **Add Tests**
-   - Unit tests for usecase
+   - Unit tests for service
    - Integration tests for API
    - Mock tests for repository
+   - Use `#[tokio::test]` for async tests
 
 8. **Update Application**
-   - Wire dependencies in `app.go`
+   - Wire dependencies in `src/app/mod.rs`
    - Register routes
-   - Update Swagger documentation
+   - Update OpenAPI documentation with utoipa
 
 9. **Update Documentation**
    - Add to architecture.md
@@ -522,12 +576,12 @@ docker exec -it <container_id> psql -U postgres -d postgres
 1. **Create Migration File**
    ```bash
    # Format: YYYYMMDD_NNN_description
-   touch sqlc/migrations/20260101_003_add_orders_table.up.sql
-   touch sqlc/migrations/20260101_003_add_orders_table.down.sql
+   sqlx migrate add -r add_orders_table
    ```
 
 2. **Write Up Migration**
    ```sql
+   -- migrations/20260101_003000000_add_orders_table.up.sql
    CREATE TABLE orders (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -536,25 +590,25 @@ docker exec -it <container_id> psql -U postgres -d postgres
        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
    );
-   
+
    CREATE INDEX idx_orders_user_id ON orders(user_id);
    ```
 
 3. **Write Down Migration**
    ```sql
+   -- migrations/20260101_003000000_add_orders_table.down.sql
    DROP INDEX IF EXISTS idx_orders_user_id;
    DROP TABLE IF EXISTS orders;
    ```
 
 4. **Apply Migration**
    ```bash
-   # Using migration tool (add to project)
-   migrate -path sqlc/migrations -database "postgres://..." up
+   sqlx migrate run
    ```
 
-5. **Regenerate SQLC**
+5. **Verify Migration**
    ```bash
-   sqlc generate
+   sqlx migrate info
    ```
 
 ### Migration Best Practices
@@ -565,39 +619,57 @@ docker exec -it <container_id> psql -U postgres -d postgres
 - Test migrations on development first
 - Never modify existing migrations
 
+### sqlx Commands
+```bash
+# Add migration
+sqlx migrate add -r description
+
+# Run migrations
+sqlx migrate run
+
+# Revert last migration
+sqlx migrate revert
+
+# Show migration status
+sqlx migrate info
+
+# Prepare for offline mode
+sqlx migrate info --database-url postgres://...
+```
+
 ## Running the Application
 
 ### Development
 ```bash
 # Set environment
-export SERVER_ENV=local
+export APP_ENV=local
 
-# Run with hot reload (add air to project)
-air
+# Run with hot reload (add cargo-watch)
+cargo watch -x run
 
 # Or standard run
-go run cmd/server/main.go
+cargo run
 ```
 
 ### Production
 ```bash
 # Build
-go build -o bin/server cmd/server/main.go
+cargo build --release
 
 # Run
-./bin/server
+./target/release/zercle-rust-template
 ```
 
 ### Docker
 ```bash
 # Build image
-docker build -t zercle-go-template .
+docker build -t zercle-rust-template .
 
 # Run container
 docker run -p 3000:3000 \
-  -e SERVER_ENV=prod \
+  -e APP_ENV=prod \
   -e DATABASE_URL=... \
-  zercle-go-template
+  zercle-rust-template
 ```
 
 ### Docker Compose
@@ -616,56 +688,89 @@ docker-compose down
 
 ### Linting
 ```bash
-# Run linter
-golangci-lint run
+# Run clippy
+cargo clippy
 
 # Fix issues
-golangci-lint run --fix
+cargo clippy --fix
+
+# All warnings as errors
+cargo clippy -- -D warnings
 ```
 
 ### Formatting
 ```bash
 # Format code
-go fmt ./...
+cargo fmt
 
 # Check formatting
-go vet ./...
+cargo fmt -- --check
 ```
 
 ### Dependencies
 ```bash
-# Tidy dependencies
-go mod tidy
+# Add dependency
+cargo add <crate>
+
+# Add dev dependency
+cargo add --dev <crate>
 
 # Update dependencies
-go get -u ./...
+cargo update
 
-# Verify dependencies
-go mod verify
+# Check for outdated
+cargo outdated
+
+# Remove dependency
+cargo remove <crate>
+
+# Check for security vulnerabilities
+cargo audit
 ```
 
 ### Documentation
 ```bash
-# Generate Swagger docs
-swag init -g cmd/server/main.go
+# Generate documentation
+cargo doc --open
 
-# View Swagger UI
-# Navigate to http://localhost:3000/swagger/index.html
+# Document private items
+cargo doc --document-private-items
 ```
 
-### SQLC
+### Testing
 ```bash
-# Generate SQLC code
-sqlc generate
+# Run all tests
+cargo test
 
-# Validate SQLC configuration
-sqlc validate
+# Run tests with output
+cargo test -- --nocapture
+
+# Run tests in parallel
+cargo test -- --test-threads=4
+
+# Run specific test
+cargo test test_name
+
+# Run tests with coverage
+cargo tarpaulin --out Html
+```
+
+### Build
+```bash
+# Debug build
+cargo build
+
+# Release build
+cargo build --release
+
+# Check without building
+cargo check
 ```
 
 ## Environment Setup
 
 ### Prerequisites
-- Go 1.24.0+
+- Rust 1.80+ (install via rustup)
 - PostgreSQL 12+
 - Docker (optional, for containerized deployment)
 
@@ -675,6 +780,18 @@ sqlc validate
 3. Configure database connection
 4. Run migrations
 5. Start application
+
+### Rust Installation
+```bash
+# Install Rust via rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Update Rust
+rustup update
+
+# Add components
+rustup component add clippy rustfmt
+```
 
 ### Database Setup
 ```bash
@@ -687,7 +804,7 @@ docker run --name postgres \
   -d postgres:15
 
 # Run migrations
-# (Add migration tool to project)
+sqlx migrate run
 ```
 
 ### Seed Data
@@ -695,3 +812,51 @@ docker run --name postgres \
 # Run seed script
 ./scripts/seed-db.sh
 ```
+
+### Development Tools
+```bash
+# Install useful tools
+cargo install cargo-watch    # Hot reload
+cargo install cargo-tarpaulin # Coverage
+cargo install cargo-audit    # Security audit
+cargo install cargo-outdated # Check outdated deps
+cargo install sqlx-cli      # Database migrations
+cargo install tokio-console  # Async debugging
+```
+
+## Rust-Specific Workflows
+
+### Error Handling
+- Always use `Result<T, E>` for fallible operations
+- Use `?` operator for error propagation
+- Use `thiserror` for custom error types
+- Use `anyhow` for application-level errors
+- Never use `unwrap()` or `expect()` in production code
+
+### Async/Await
+- All I/O operations must be async
+- Use `#[tokio::test]` for async tests
+- Use `tokio::spawn` for concurrent tasks
+- Use `tokio::join!` for concurrent operations
+- Handle cancellation appropriately
+
+### Ownership and Borrowing
+- Use `&self` for read-only operations
+- Use `&mut self` for write operations
+- Use `Arc<T>` for shared state across async tasks
+- Use `Clone` for cheap-to-clone types
+- Use `Cow<T>` for borrowed or owned data
+
+### Testing
+- Use `#[test]` for synchronous tests
+- Use `#[tokio::test]` for async tests
+- Use `rstest` for table-driven tests
+- Use `mockall` for mocking
+- Use `testcontainers-rs` for integration tests
+
+### Performance
+- Profile with `tokio-console` or `flamegraph`
+- Use `cargo flamegraph` for flamegraphs
+- Use `cargo tarpaulin` for coverage
+- Use `cargo clippy` for linting
+- Use `cargo audit` for security checks

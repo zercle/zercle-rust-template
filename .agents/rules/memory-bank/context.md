@@ -7,10 +7,10 @@
 **Rationale:** Separates business logic from infrastructure, improves testability, enables independent evolution of layers
 **Impact:** All new domains must follow the established layer structure
 
-### SQLC for Database Access
-**Decision:** Use SQLC instead of raw SQL or ORM
-**Rationale:** Type-safe queries, compile-time safety, better performance than ORMs, explicit SQL control
-**Impact:** All database queries must be SQLC-generated, placed in `sqlc/queries/`
+### sqlx for Database Access
+**Decision:** Use sqlx instead of raw SQL or ORM
+**Rationale:** Type-safe queries with compile-time checking, better performance than ORMs, explicit SQL control, async/await support
+**Impact:** All database queries must use sqlx macros (`sqlx::query!`, `sqlx::query_as!`)
 
 ### JWT Stateless Authentication
 **Decision:** JWT tokens without server-side session storage
@@ -20,12 +20,17 @@
 ### Argon2id for Password Hashing
 **Decision:** Argon2id algorithm for password hashing
 **Rationale:** Memory-hard, resistant to GPU/ASIC attacks, recommended by security experts
-**Impact:** All password operations must use the password.Hasher wrapper
+**Impact:** All password operations must use the argon2 crate
 
-### Echo Framework
-**Decision:** Echo v4 as HTTP framework
-**Rationale:** High performance, minimal boilerplate, excellent middleware support, active community
-**Impact:** All HTTP handlers use Echo context and patterns
+### Axum Framework
+**Decision:** Axum 0.7+ as HTTP framework
+**Rationale:** High performance, minimal boilerplate, excellent Tower middleware support, async/await with Tokio, active community
+**Impact:** All HTTP handlers use Axum patterns and Tower middleware
+
+### Tokio Runtime
+**Decision:** Tokio as async runtime
+**Rationale:** Industry-standard async runtime, excellent performance, extensive ecosystem, battle-tested
+**Impact:** All async operations run on Tokio runtime
 
 ## Domain Rules
 
@@ -38,8 +43,8 @@
 - Minimum full name length: 2 characters
 
 **Validation Rules:**
-- Email format validated by validator/v10
-- Password strength enforced by Argon2id parameters
+- Email format validated by validator crate
+- Password strength enforced by argon2 parameters
 - Phone number is optional
 - Full name required for registration
 
@@ -72,152 +77,185 @@
 
 ### Core Application Files
 
-**cmd/server/main.go**
+**src/main.rs**
 - Application entry point
 - Loads environment-specific configuration
-- Initializes logger and application
+- Initializes Tokio runtime
+- Initializes tracing logger
+- Creates application state
+- Starts Axum server
 - Handles graceful shutdown
 
-**internal/app/app.go**
-- Main application structure
-- Dependency injection container
+**src/app/mod.rs** or **src/lib.rs**
+- Main application module
+- Application state definition
+- Dependency injection with Arc and traits
 - Middleware setup (RequestID, Logger, Recovery, CORS, RateLimit)
-- Route registration
+- Route registration with Axum Router
 - Server lifecycle management
+
+**src/app/state.rs**
+- Application state struct
+- Shared resources (database pool, config, etc.)
+- Implements Clone for Axum state
 
 ### Configuration
 
-**internal/infrastructure/config/config.go**
+**src/infrastructure/config/mod.rs**
 - Configuration structs for all components
-- Viper-based configuration loading
+- config crate-based configuration loading
 - Environment variable support
-- Type-safe configuration access
+- Type-safe configuration access with serde
 
-**configs/*.yaml**
+**configs/*.toml** or **configs/*.yaml**
 - Environment-specific configurations
 - local, dev, uat, prod environments
 - Database, JWT, logging, CORS, rate limit settings
 
 ### Database Layer
 
-**internal/infrastructure/db/postgres.go**
+**src/infrastructure/db/postgres.rs**
 - PostgreSQL database implementation
-- Connection pooling configuration
+- Connection pooling configuration with sqlx PgPool
 - Health check implementation
-- SQLC queries integration
+- sqlx query integration
 
-**internal/infrastructure/db/factory.go**
+**src/infrastructure/db/mod.rs**
 - Database factory for creating connections
 - Abstracts database type selection
 - Currently supports PostgreSQL only
-
-**internal/infrastructure/sqlc/db/**
-- SQLC-generated code
-- Type-safe database queries
-- Models and querier interfaces
-- Auto-generated from SQL files
+- Connection pool management
 
 ### Domain: User
 
-**internal/domain/user/entity/user.go**
+**src/domain/user/entity.rs**
 - User entity definition
 - UUID-based primary key
 - Fields: id, email, password, full_name, phone, timestamps
+- Business logic methods
 
-**internal/domain/user/repository/repository.go**
-- SQLC-based repository implementation
-- CRUD operations for users
+**src/domain/user/repository.rs**
+- sqlx-based repository implementation
+- Async CRUD operations for users
 - Email uniqueness check
 - Pagination support
+- Repository trait definition
 
-**internal/domain/user/usecase/usecase.go**
+**src/domain/user/service.rs**
 - Business logic for user operations
 - Register, Login, GetProfile, UpdateProfile, DeleteAccount, ListUsers
-- Password hashing and verification
-- JWT token generation
-- Domain-specific error definitions
+- Password hashing and verification with argon2
+- JWT token generation with jsonwebtoken
+- Domain-specific error definitions with thiserror
 
-**internal/domain/user/handler/handler.go**
+**src/domain/user/handler.rs**
 - HTTP handlers for user endpoints
-- Request/response DTO mapping
+- Request/response DTO mapping with serde
 - Error handling and HTTP status codes
 - Route registration
+- Axum handler functions
+
+**src/domain/user/request.rs**
+- Request DTOs for user operations
+- Validation with validator or garde derive macros
+- Serde serialization
+
+**src/domain/user/response.rs**
+- Response DTOs for user operations
+- Serde serialization
 
 ### Domain: Task
 
-**internal/domain/task/entity/task.go**
+**src/domain/task/entity.rs**
 - Task entity definition
 - UUID-based primary key
 - Fields: id, user_id, title, description, status, priority, due_date, completed_at, timestamps
+- Business logic methods
 
-**internal/domain/task/repository/repository.go**
-- pgx-based repository implementation
-- CRUD operations for tasks
+**src/domain/task/repository.rs**
+- sqlx-based repository implementation
+- Async CRUD operations for tasks
 - User filtering for list operations
 - Ownership verification
+- Repository trait definition
 
-**internal/domain/task/usecase/usecase.go**
+**src/domain/task/service.rs**
 - Business logic for task operations
 - CreateTask, GetTask, ListTasks, UpdateTask, DeleteTask
 - Status and priority validation
 - Ownership enforcement
-- Domain-specific error definitions
+- Domain-specific error definitions with thiserror
 
-**internal/domain/task/handler/handler.go**
+**src/domain/task/handler.rs**
 - HTTP handlers for task endpoints
-- Request/response DTO mapping
+- Request/response DTO mapping with serde
 - Error handling and HTTP status codes
 - Protected routes only
+- Axum handler functions
+
+**src/domain/task/request.rs**
+- Request DTOs for task operations
+- Validation with validator or garde derive macros
+- Serde serialization
+
+**src/domain/task/response.rs**
+- Response DTOs for task operations
+- Serde serialization
 
 ### Infrastructure Components
 
-**internal/infrastructure/logger/logger.go**
-- Zerolog-based structured logger
+**src/infrastructure/logger/mod.rs**
+- tracing-based structured logger
 - Configurable log levels and format
 - Request ID integration
 - Context-aware logging
+- tracing-subscriber setup
 
-**internal/infrastructure/password/passworder.go**
-- Argon2id password hashing wrapper
+**src/infrastructure/password/mod.rs**
+- argon2 password hashing wrapper
 - Configurable parameters
 - Hash and verify operations
+- Thread-safe implementation
 
-**internal/infrastructure/http/client/resty.go**
-- Resty HTTP client wrapper
+**src/infrastructure/http/client/mod.rs**
+- reqwest HTTP client wrapper
 - For making external HTTP requests
 - Configurable timeouts and retries
+- Async client
 
-**pkg/middleware/**
+**src/middleware/mod.rs**
 - Custom middleware implementations
-- JWT authentication
+- JWT authentication (Tower layer)
 - Request ID generation
 - Structured logging
-- CORS handling
-- Rate limiting
+- CORS handling (tower-http)
+- Rate limiting (governor or tower-governor)
 
-**pkg/health/**
+**src/health/mod.rs**
 - Health check handler
 - Database connectivity check
 - Readiness probe
+- Axum handler for health endpoints
 
 ## Dependency Mapping
 
 ### Domain Dependencies
-- **User Domain:** Depends on config, logger, password, middleware (JWT)
-- **Task Domain:** Depends on logger only (uses pgx directly for DB)
+- **User Domain:** Depends on config, tracing, argon2, middleware (JWT), jsonwebtoken
+- **Task Domain:** Depends on tracing, sqlx
 
 ### Infrastructure Dependencies
-- **Database:** pgx/v5 driver
-- **Config:** Viper
-- **Logging:** Zerolog
-- **Validation:** validator/v10
-- **Auth:** golang-jwt/jwt/v5
-- **Password:** golang.org/x/crypto
+- **Database:** sqlx with PostgreSQL driver
+- **Config:** config crate, serde
+- **Logging:** tracing, tracing-subscriber
+- **Validation:** validator or garde
+- **Auth:** jsonwebtoken
+- **Password:** argon2
 
 ### External Dependencies
 - **PostgreSQL:** Primary database
-- **Testcontainers:** Integration testing
-- **Swagger:** API documentation
+- **Testcontainers-rs:** Integration testing
+- **utoipa:** API documentation
+- **Tokio:** Async runtime
 
 ## Key Implementation Details
 
@@ -226,6 +264,7 @@
 - Configurable expiration time
 - Secret key from configuration
 - Bearer token format in Authorization header
+- Implemented with jsonwebtoken crate
 
 ### Database Connection Pool
 - Min connections: 5
@@ -233,89 +272,150 @@
 - Connection lifetime: 1 hour
 - Idle timeout: 10 minutes
 - Health check period: 1 minute
+- Implemented with sqlx PgPool
 
 ### Rate Limiting
 - Configurable requests per time window
 - Default: 100 requests per 60 seconds
-- Applied at middleware level
+- Applied at middleware level with Tower layer
 - Per-client tracking
+- Implemented with governor or tower-governor
 
 ### CORS Configuration
 - Allowed origins configurable per environment
 - Local: localhost:3000, localhost:8080
 - Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 - Headers: Authorization, Content-Type, X-Request-ID
+- Implemented with tower-http CORS middleware
 
 ### Error Handling Pattern
-```go
-// UseCase layer: Domain errors
-if user == nil {
-    return nil, ErrUserNotFound
+```rust
+// Service layer: Domain errors with thiserror
+#[derive(Error, Debug)]
+pub enum UserError {
+    #[error("User not found")]
+    NotFound,
+    #[error("Email already exists")]
+    EmailExists,
+    #[error("Invalid credentials")]
+    InvalidCredentials,
 }
 
 // Repository layer: Wrap with context
-if err != nil {
-    return fmt.Errorf("failed to create user: %w", err)
+pub async fn get_by_email(&self, email: &str) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as!(User, "SELECT * FROM users WHERE email = $1", email)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get user by email: {}", e);
+            e
+        })
 }
 
 // Handler layer: Map to HTTP status
-if errors.Is(err, ErrUserNotFound) {
-    return c.JSON(http.StatusNotFound, ErrorResponse{...})
+impl IntoResponse for UserError {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            UserError::NotFound => (StatusCode::NOT_FOUND, "User not found"),
+            UserError::EmailExists => (StatusCode::CONFLICT, "Email already exists"),
+            UserError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid credentials"),
+        };
+        (status, Json(json!({ "error": message }))).into_response()
+    }
 }
 ```
 
 ### Request Validation
-- Use validator/v10 struct tags
+- Use validator or garde crate derive macros
 - Validate before business logic
 - Return validation errors with field details
-- Example: `validate:"required,email"`
+- Example: `#[validate(email)]`
 
 ### Pagination Pattern
-```go
+```rust
 // Standard pagination parameters
-limit, offset := getPaginationParams(c)
+#[derive(Deserialize)]
+pub struct PaginationParams {
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
 
 // Repository returns data + total count
-users, total, err := repo.List(ctx, limit, offset)
+pub async fn list(
+    &self,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<User>, i64), sqlx::Error> {
+    let users = sqlx::query_as!(
+        User,
+        "SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+        limit as i64,
+        offset as i64
+    )
+    .fetch_all(&self.pool)
+    .await?;
+
+    let total = sqlx::query_scalar!("SELECT COUNT(*) FROM users")
+        .fetch_one(&self.pool)
+        .await?;
+
+    Ok((users, total))
+}
 
 // Response includes pagination metadata
-return c.JSON(http.StatusOK, ListResponse{
-    Users: users,
-    Total: total,
-    Limit: limit,
-    Offset: offset,
-})
+pub struct ListResponse<T> {
+    pub data: Vec<T>,
+    pub total: i64,
+    pub limit: u64,
+    pub offset: u64,
+}
 ```
 
 ## Testing Strategy
 
 ### Unit Tests
-- Test usecase business logic
-- Mock repository dependencies
+- Test service business logic
+- Mock repository dependencies with mockall
 - Test error paths and edge cases
-- Located in same package as implementation
+- Located in same module as implementation (`#[cfg(test)]`)
 
 ### Integration Tests
 - Test API endpoints end-to-end
 - Use testcontainers for real database
 - Test authentication flow
-- Located in test/integration/
+- Located in `tests/` directory
 
 ### Mock Generation
-- Use go.uber.org/mock
-- Generate mocks from domain interfaces
-- Located in domain/*/mock/ directories
-- Regenerate when interfaces change
+- Use mockall crate
+- Generate mocks from traits
+- Located in domain/*/mock.rs files
+- Regenerate when traits change
 
 ### Test Helpers
-- test/mock/sqlmock.go - SQL mock utilities
-- test/integration/test_helper.go - Integration test setup
+- `tests/common/mod.rs` - Common test utilities
+- `tests/integration/mod.rs` - Integration test setup
 - Common test fixtures and utilities
+
+### Async Testing
+```rust
+#[tokio::test]
+async fn test_login_valid_credentials() {
+    // Arrange
+    let mock_repo = MockUserRepository::new();
+    let use_case = UserService::new(mock_repo, config);
+
+    // Act
+    let result = use_case.login(request).await;
+
+    // Assert
+    assert!(result.is_ok());
+}
+```
 
 ## Migration Strategy
 
 ### Database Migrations
-- SQLC migration format
+- sqlx-cli migration format
 - Up and down migrations required
 - Version naming: YYYYMMDD_NNN_description
 - Apply migrations in order
@@ -324,36 +424,62 @@ return c.JSON(http.StatusOK, ListResponse{
 ### Schema Changes
 - Add new migrations for schema changes
 - Never modify existing migrations
-- Use SQLC to regenerate queries after schema changes
+- Use sqlx macros for queries after schema changes
 - Test migrations in all environments
+
+### Migration Commands
+```bash
+# Create migration
+sqlx migrate add -r add_orders_table
+
+# Run migrations
+sqlx migrate run
+
+# Revert last migration
+sqlx migrate revert
+
+# Prepare for offline mode
+sqlx migrate info
+```
 
 ## Configuration Management
 
 ### Environment Hierarchy
-1. Base config from YAML file
+1. Base config from TOML/YAML file
 2. Environment variable overrides
 3. Default values in struct tags
 
 ### Configuration Files
-- `configs/local.yaml` - Local development
-- `configs/dev.yaml` - Development environment
-- `configs/uat.yaml` - User acceptance testing
-- `configs/prod.yaml` - Production
+- `configs/local.toml` - Local development
+- `configs/dev.toml` - Development environment
+- `configs/uat.toml` - User acceptance testing
+- `configs/prod.toml` - Production
 
 ### Environment Variables
-- `SERVER_ENV` - Environment selector (default: local)
+- `APP_ENV` - Environment selector (default: local)
 - Database credentials via env vars in production
 - JWT secret via env vars in production
 - Never commit secrets to repository
 
+### Config Loading
+```rust
+use config::{Config, Environment, File};
+
+let config = Config::builder()
+    .add_source(File::with_name("configs/local"))
+    .add_source(Environment::with_prefix("APP"))
+    .build()?;
+```
+
 ## Deployment Considerations
 
 ### Docker Deployment
-- Multi-stage build for optimization
+- Multi-stage build for optimization with cargo-chef
 - Alpine-based final image
 - Non-root user for security
 - Health checks configured
 - Port 3000 exposed
+- Optimized binary with release profile
 
 ### Database Requirements
 - PostgreSQL 12+ required
@@ -363,10 +489,17 @@ return c.JSON(http.StatusOK, ListResponse{
 
 ### Monitoring Points
 - Health check endpoints
-- Request/response logging
+- Request/response logging with tracing
 - Error logging with context
 - Performance metrics (future)
 - Database query performance (future)
+
+### Rust-Specific Deployment
+- Use `cargo build --release` for production builds
+- Enable LTO in Cargo.toml for optimization
+- Strip symbols for smaller binaries
+- Use `cargo-chef` for better Docker caching
+- Consider static linking with musl target
 
 ## Known Constraints
 
@@ -379,14 +512,51 @@ return c.JSON(http.StatusOK, ListResponse{
 - Single-region deployment only
 
 ### Technical Debt
-- Task domain uses pgx directly instead of SQLC
-- Mixed database access patterns (SQLC vs pgx)
-- Consider standardizing on one approach
+- Consider standardizing on sqlx for all domains
+- Review async patterns for consistency
+- Evaluate error handling strategy across domains
 
 ### Future Considerations
-- Add Redis caching layer
-- Implement message queue for async operations
-- Add Prometheus metrics
+- Add Redis caching layer with redis-rs
+- Implement message queue for async operations (lapin, rdkafka)
+- Add Prometheus metrics with prometheus-client
 - Implement distributed tracing with OpenTelemetry
-- Add GraphQL support as alternative to REST
-- Consider gRPC for internal service communication
+- Add GraphQL support as alternative to REST (juniper, async-graphql)
+- Consider gRPC for internal service communication (tonic)
+- Add API versioning strategy
+
+## Rust-Specific Considerations
+
+### Ownership and Borrowing
+- Use `&self` for read-only operations
+- Use `&mut self` for write operations
+- Use `Arc<T>` for shared state across async tasks
+- Use `Clone` for cheap-to-clone types
+- Use `Cow<T>` for borrowed or owned data
+
+### Async/Await
+- All I/O operations must be async
+- Use `tokio::spawn` for concurrent tasks
+- Use `tokio::join!` for concurrent operations
+- Use `tokio::select!` for multiple futures
+- Handle cancellation with `tokio::sync::CancellationToken`
+
+### Error Handling
+- Use `Result<T, E>` for fallible operations
+- Use `?` operator for error propagation
+- Use `thiserror` for custom error types
+- Use `anyhow` for application-level errors
+- Never use `unwrap()` or `expect()` in production code
+
+### Thread Safety
+- Use `Send + Sync` bounds for shared state
+- Use `tokio::sync::Mutex` for async mutexes
+- Use `std::sync::RwLock` for read-write locks
+- Use `Arc<T>` for shared ownership across threads
+
+### Performance
+- Zero-cost abstractions from Rust
+- Compile-time optimizations
+- Memory safety without garbage collection
+- Efficient async I/O with Tokio
+- No runtime overhead for abstractions
