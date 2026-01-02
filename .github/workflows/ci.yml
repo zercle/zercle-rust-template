@@ -152,7 +152,7 @@ jobs:
           exit 1
 
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --features postgres,migrate
+        run: cargo install sqlx-cli --no-default-features --features postgres
 
       - name: Run database migrations
         run: |
