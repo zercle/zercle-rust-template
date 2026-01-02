@@ -156,8 +156,9 @@ jobs:
 
       - name: Run database migrations
         run: |
-          echo "y" | cargo sqlx database drop --database-url $DATABASE_URL || true
-          cargo sqlx database create --database-url $DATABASE_URL
+          # Create database if it doesn't exist (ignore if already exists)
+          cargo sqlx database create --database-url $DATABASE_URL || true
+          # Run migrations - they will apply in order based on timestamp
           cargo sqlx migrate run --database-url $DATABASE_URL --source sqlc/migrations
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
