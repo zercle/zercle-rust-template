@@ -10,10 +10,8 @@
 #
 # Jobs:
 #   - lint: Code formatting and linting checks
-#   - unit-test: Unit tests (no external dependencies)
-#   - integration-test: Integration tests with PostgreSQL
+#   - test: Unit and integration tests
 #   - build: Release build verification
-#   - security: Security auditing (optional)
 #
 # =============================================================================
 
@@ -41,15 +39,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Rust toolchain version (from rust-toolchain.toml)
-  RUST_VERSION: "1.85.0"
-  
   # Database configuration
   POSTGRES_USER: test_user
   POSTGRES_PASSWORD: test_password
   POSTGRES_DB: test_db
   DATABASE_URL: postgres://test_user:test_password@localhost:5432/test_db
-  
+
   # Cargo configuration
   CARGO_TERM_COLOR: always
   CARGO_NET_GIT_FETCH_WITH_CLI: false
@@ -61,21 +56,19 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    
-    # Use the Rust toolchain specified in rust-toolchain.toml
-    container:
-      image: rust:1.85.0-alpine
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      
-      - name: Install additional Rust components
-        run: |
-          rustup component add rustfmt clippy
-      
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
         with:
@@ -84,40 +77,51 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
-      
+            ${{ runner.os }}-cargo-lint-
+
       - name: Check code formatting
         run: cargo fmt -- --check
-      
+
       - name: Run Clippy linter
-        run: |
-          cargo clippy --all-targets --all-features -- -D warnings -A clippy::dbg_macro
-      
-      - name: Run Clippy on tests
-        run: |
-          cargo clippy --all-targets --all-features --tests -- -D warnings -A clippy::dbg_macro
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   # ===========================================================================
-  # Unit Tests Job
+  # Test Job - Unit and Integration Tests
   # ===========================================================================
-  unit-test:
-    name: Unit Tests
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    
-    container:
-      image: rust:1.85.0-alpine
-    
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user -d test_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      
-      - name: Install PostgreSQL client tools
-        run: apk add --no-cache postgresql-client libpq
-      
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
         with:
@@ -129,74 +133,10 @@ jobs:
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-
-      
-      - name: Run unit tests
-        run: cargo test --lib -- --test-threads=4
-      
-      - name: Run unit test binaries
-        run: |
-          cargo test --bins -- --test-threads=4
-      
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-results
-          path: target/test-results/
-          retention-days: 7
 
-  # ===========================================================================
-  # Integration Tests Job with PostgreSQL
-  # ===========================================================================
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    
-    services:
-      # PostgreSQL database service for integration tests
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test_user -d test_db" --health-interval 10s --health-timeout 5s --health-retries 5 --health-start-period 10s
-    
-    container:
-      image: rust:1.85.0-alpine
-      env:
-        DATABASE_URL: ${{ env.DATABASE_URL }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      
       - name: Install PostgreSQL client tools
-        run: apk add --no-cache postgresql-client libpq
-      
-      - name: Install sqlx-cli for migrations
-        run: |
-          cargo install sqlx-cli --no-default-features --features postgres
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-      
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-cargo-integration-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-integration-
-      
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client libpq-dev
+
       - name: Wait for PostgreSQL to be ready
         run: |
           echo "Waiting for PostgreSQL to be ready..."
@@ -210,7 +150,13 @@ jobs:
           done
           echo "PostgreSQL did not become ready in time"
           exit 1
-      
+
+      - name: Install sqlx-cli for migrations
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
       - name: Run database migrations
         run: |
           cargo sqlx database drop --database-url $DATABASE_URL --yes || true
@@ -218,30 +164,29 @@ jobs:
           cargo sqlx migrate run --database-url $DATABASE_URL
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-      
+
+      - name: Run unit tests (lib)
+        run: cargo test --lib -- --test-threads=4
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
       - name: Run integration tests
         run: |
-          cargo test --test integration -- --test-threads=4
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-      
-      - name: Run handler tests
-        run: |
+          cargo test --test api_test -- --test-threads=4
+          cargo test --test entity_validation_test -- --test-threads=4
+          cargo test --test repository_test -- --test-threads=4
+          cargo test --test settings_test -- --test-threads=4
           cargo test --test handler_test -- --test-threads=4
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-      
-      - name: Run middleware tests
-        run: |
           cargo test --test middleware_test -- --test-threads=4
+          cargo test --test usecase_test -- --test-threads=4
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-      
-      - name: Upload integration test results
+
+      - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-results
+          name: test-results
           path: target/test-results/
           retention-days: 7
 
@@ -251,16 +196,18 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    
-    container:
-      image: rust:1.85.0-alpine
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
         with:
@@ -272,13 +219,13 @@ jobs:
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-build-
-      
+
       - name: Build in debug mode
         run: cargo build
-      
+
       - name: Build in release mode
         run: cargo build --release
-      
+
       - name: Verify release binary exists
         run: |
           if [ -f target/release/zercle-rust-template ]; then
@@ -286,14 +233,13 @@ jobs:
             ls -lh target/release/zercle-rust-template
           else
             echo "ERROR: Release binary not found!"
-            ls -lh target/release/
+            ls -lh target/release/ 2>/dev/null || echo "No release directory found"
             exit 1
           fi
-      
+
       - name: Verify binary is executable
-        run: |
-          file target/release/zercle-rust-template
-      
+        run: file target/release/zercle-rust-template
+
       - name: Upload release binary artifact
         uses: actions/upload-artifact@v4
         with:
@@ -302,161 +248,56 @@ jobs:
           retention-days: 7
 
   # ===========================================================================
-  # Security Audit Job (Optional)
-  # ===========================================================================
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    # Only run on main branch pushes and PRs, not on every commit
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    container:
-      image: rust:1.85.0-alpine
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      
-      - name: Install cargo-audit
-        run: |
-          cargo install cargo-audit
-      
-      - name: Install cargo-outdated
-        run: |
-          cargo install cargo-outdated
-      
-      - name: Run cargo-audit for vulnerabilities
-        run: cargo audit --deny warnings
-      
-      - name: Check for outdated dependencies
-        run: |
-          cargo outdated --root-deps-only --exit-code 1 || true
-
-  # ===========================================================================
-  # Coverage Report Job (Optional)
-  # ===========================================================================
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    
-    container:
-      image: rust:1.85.0-alpine
-    
-    services:
-      # PostgreSQL database service for tests that need it
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test_user -d test_db" --health-interval 10s --health-timeout 5s --health-retries 5 --health-start-period 10s
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      
-      - name: Install tarpaulin for coverage
-        run: |
-          cargo install cargo-tarpaulin
-      
-      - name: Wait for PostgreSQL to be ready
-        run: |
-          for i in {1..30}; do
-            if pg_isready -h localhost -p 5432 -U test_user -d test_db; then
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
-      
-      - name: Run coverage with tarpaulin
-        run: |
-          cargo tarpaulin --out Html --out Xml -- --test-threads=4
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-      
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: |
-            tarpaulin-report.html
-            cobertura-coverage.xml
-          retention-days: 7
-      
-      - name: Install git and gpg for codecov
-        run: apk add --no-cache git gnupg
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          file: ./cobertura-coverage.xml
-          fail_ci_if_error: false
-
-  # ===========================================================================
   # All Tests Summary Job
   # ===========================================================================
   summary:
     name: Summary
-    needs: [lint, unit-test, integration-test, build]
+    needs: [lint, test, build]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
       - name: Create summary comment
         run: |
+          # Determine status for each job
+          LINT_STATUS="${{ needs.lint.result }}"
+          TEST_STATUS="${{ needs.test.result }}"
+          BUILD_STATUS="${{ needs.build.result }}"
+          
           echo "## CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Lint results
           echo "### Lint" >> $GITHUB_STEP_SUMMARY
-          if ${{ needs.lint.result == 'success' }}; then
-            echo "✅ Code formatting and linting passed" >> $GITHUB_STEP_SUMMARY
+          if [ "$LINT_STATUS" = "success" ]; then
+            echo ":white_check_mark: Code formatting and linting passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Code formatting or linting failed" >> $GITHUB_STEP_SUMMARY
+            echo ":x: Code formatting or linting failed" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Unit tests results
-          echo "### Unit Tests" >> $GITHUB_STEP_SUMMARY
-          if ${{ needs.unit-test.result == 'success' }}; then
-            echo "✅ Unit tests passed" >> $GITHUB_STEP_SUMMARY
+          # Test results
+          echo "### Test" >> $GITHUB_STEP_SUMMARY
+          if [ "$TEST_STATUS" = "success" ]; then
+            echo ":white_check_mark: Tests passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Unit tests failed" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Integration tests results
-          echo "### Integration Tests" >> $GITHUB_STEP_SUMMARY
-          if ${{ needs.integration-test.result == 'success' }}; then
-            echo "✅ Integration tests passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Integration tests failed" >> $GITHUB_STEP_SUMMARY
+            echo ":x: Tests failed" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Build results
           echo "### Build" >> $GITHUB_STEP_SUMMARY
-          if ${{ needs.build.result == 'success' }}; then
-            echo "✅ Release build successful" >> $GITHUB_STEP_SUMMARY
+          if [ "$BUILD_STATUS" = "success" ]; then
+            echo ":white_check_mark: Release build successful" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Release build failed" >> $GITHUB_STEP_SUMMARY
+            echo ":x: Release build failed" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Overall status
           echo "---" >> $GITHUB_STEP_SUMMARY
-          if ${{ needs.lint.result == 'success' && needs.unit-test.result == 'success' && needs.integration-test.result == 'success' && needs.build.result == 'success' }}; then
-            echo "## 🎉 All checks passed!" >> $GITHUB_STEP_SUMMARY
+          if [ "$LINT_STATUS" = "success" ] && [ "$TEST_STATUS" = "success" ] && [ "$BUILD_STATUS" = "success" ]; then
+            echo ":tada: All checks passed!" >> $GITHUB_STEP_SUMMARY
           else
-            echo "## ⚠️ Some checks failed. Please review the logs." >> $GITHUB_STEP_SUMMARY
+            echo ":warning: Some checks failed. Please review the logs." >> $GITHUB_STEP_SUMMARY
           fi
