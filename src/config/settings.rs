@@ -76,7 +76,6 @@ impl Settings {
 
     /// Internal function to parse settings from environment variables
     fn from_env_parsed() -> anyhow::Result<Self> {
-
         Ok(Settings {
             server: ServerConfig {
                 host: std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
