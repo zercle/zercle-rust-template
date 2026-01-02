@@ -1,0 +1,94 @@
+[package]
+name = "zercle-rust-template"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "A Rust-based template project using Axum framework with PostgreSQL"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["multipart", "tower-log"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-br", "limit", "timeout", "set-header"] }
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# UUID and Date/Time
+uuid = { version = "1.6", features = ["v4", "serde", "fast-rng"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Authentication and Security
+argon2 = "0.5"
+jsonwebtoken = "9.2"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+dotenv = "0.15"
+config = "0.14"
+
+# Async utilities
+futures = "0.3"
+async-trait = "0.1"
+
+# Async utilities
+tokio-util = { version = "0.7", features = ["compat"] }
+
+# Concurrency
+parking_lot = "0.12"
+
+# HTTP client (for external API calls)
+reqwest = { version = "0.11", features = ["json"] }
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+wiremock = "0.6"
+mockall = "0.12"
+tempfile = "3.8"
+rstest = "0.18"
+
+[features]
+default = ["full"]
+full = ["sqlx/postgres", "sqlx/runtime-tokio-rustls"]
+
+[lib]
+name = "zercle_rust_template"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zercle-rust-template"
+path = "src/main.rs"
+
+[workspace]
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
+codegen-units = 1
+strip = true

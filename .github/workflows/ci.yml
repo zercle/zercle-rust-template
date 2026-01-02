@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+env:
+  RUST_VERSION: "stable"
+  POSTGRES_VERSION: "18"
+  PROJECT_NAME: "zercle-rust-template"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Run linters
+        run: make lint
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo-audit
+        run: cargo-audit audit --format sarif --output results.sarif
+
+      - name: Upload cargo-audit results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+
+  format:
+    name: Check Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Check code formatting
+        run: make fmt-check
+
+  generate:
+    name: Code Generation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Install sqlc
+        run: cargo install sqlc
+
+      - name: Verify sqlc configuration
+        run: |
+          if [ ! -f "sqlc.yaml" ]; then
+            echo "Error: sqlc.yaml not found"
+            exit 1
+          fi
+
+      - name: Generate code
+        run: make db-generate
+
+      - name: Check for uncommitted changes
+        run: |
+          git diff --exit-code || (echo "Generated code is out of date. Run 'make db-generate' and commit the changes."; exit 1)
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Run unit tests
+        run: make test-unit
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up PostgreSQL
+        uses: harmon758/postgresql-action@v1
+        with:
+          postgresql-version: ${{ env.POSTGRES_VERSION }}
+
+      - name: Run integration tests
+        run: make test-integration
+
+  test-coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Run tests with coverage
+        run: make test-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./tarpaulin-report.html
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, format, generate, test-unit, test-integration, security]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rust-version: ${{ env.RUST_VERSION }}
+          cache: true
+
+      - name: Build application
+        run: make build
+
+      - name: Build release
+        run: make build-release
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary
+          path: target/release/${{ env.PROJECT_NAME }}
+          retention-days: 7
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [lint, format, generate, test-unit, test-integration, security]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.PROJECT_NAME }}:test -f deployments/docker/Dockerfile .
+          docker images ${{ env.PROJECT_NAME }}:test
