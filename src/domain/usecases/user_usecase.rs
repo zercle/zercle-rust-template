@@ -252,7 +252,9 @@ impl UserUsecase for UserUsecaseImpl {
             .find_by_email(&req.email)
             .await
             .context("Failed to find user by email")?
-            .ok_or(UserUsecaseError::InvalidCredentials("Invalid email or password".to_string()))?;
+            .ok_or(UserUsecaseError::InvalidCredentials(
+                "Invalid email or password".to_string(),
+            ))?;
 
         // Verify password
         let password_valid = self.verify_password(&req.password, &user.password_hash)?;

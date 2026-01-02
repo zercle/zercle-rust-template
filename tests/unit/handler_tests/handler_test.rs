@@ -2,14 +2,14 @@
 //!
 //! This module contains basic unit tests for HTTP handlers and responses.
 
+use axum::http::StatusCode;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 use zercle_rust_template::domain::entities::{
-    CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus, UpdateTaskRequest,
-    User,
+    CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus,
+    UpdateTaskRequest, User,
 };
 use zercle_rust_template::infrastructure::http::handlers::ApiResponse;
-use axum::http::StatusCode;
 
 // ============================================================================
 // ApiResponse Tests
@@ -22,7 +22,7 @@ mod api_response_tests {
     #[test]
     fn test_api_response_success() {
         let response = ApiResponse::<String>::success("test data".to_string());
-        
+
         assert!(response.success);
         assert!(response.data.is_some());
         assert_eq!(response.data.unwrap(), "test data");
@@ -33,8 +33,9 @@ mod api_response_tests {
     /// Test ApiResponse::with_message
     #[test]
     fn test_api_response_with_message() {
-        let response = ApiResponse::<String>::with_message(Some("data".to_string()), "Operation successful");
-        
+        let response =
+            ApiResponse::<String>::with_message(Some("data".to_string()), "Operation successful");
+
         assert!(response.success);
         assert!(response.data.is_some());
         assert_eq!(response.message.unwrap(), "Operation successful");
@@ -45,7 +46,7 @@ mod api_response_tests {
     #[test]
     fn test_api_response_error() {
         let response = ApiResponse::<()>::error("Something went wrong");
-        
+
         assert!(!response.success);
         assert!(response.data.is_none());
         assert!(response.message.is_none());
@@ -57,14 +58,14 @@ mod api_response_tests {
     fn test_api_response_none_data() {
         let response = ApiResponse::<String>::success("".to_string());
         assert!(response.data.is_some());
-        
+
         let response = ApiResponse::<String>::success("".to_string());
         assert!(response.data.is_some());
     }
 }
 
 // ============================================================================
-// Entity Factory Tests  
+// Entity Factory Tests
 // ============================================================================
 
 mod entity_factory_tests {
@@ -79,7 +80,7 @@ mod entity_factory_tests {
             full_name: Some("Test User".to_string()),
             phone: Some("+1234567890".to_string()),
         };
-        
+
         assert_eq!(req.email, "test@example.com");
         assert_eq!(req.password, "Password123!");
         assert_eq!(req.full_name, Some("Test User".to_string()));
@@ -93,7 +94,7 @@ mod entity_factory_tests {
             email: "test@example.com".to_string(),
             password: "password123".to_string(),
         };
-        
+
         assert_eq!(req.email, "test@example.com");
         assert_eq!(req.password, "password123");
     }
@@ -107,7 +108,7 @@ mod entity_factory_tests {
             priority: Some(TaskPriority::High),
             due_date: Some(Utc::now() + Duration::days(1)),
         };
-        
+
         assert_eq!(req.title, "Test Task");
         assert_eq!(req.description, Some("Description".to_string()));
         assert_eq!(req.priority, Some(TaskPriority::High));
@@ -123,7 +124,7 @@ mod entity_factory_tests {
             priority: Some(TaskPriority::Low),
             due_date: None,
         };
-        
+
         assert_eq!(req.title, Some("Updated Title".to_string()));
         assert_eq!(req.status, Some(TaskStatus::Completed));
         assert!(req.has_updates());
@@ -139,7 +140,7 @@ mod entity_factory_tests {
             priority: None,
             due_date: None,
         };
-        
+
         assert!(!req.has_updates());
     }
 }
