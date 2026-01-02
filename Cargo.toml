@@ -91,7 +91,7 @@ reqwest = { version = "0.13", features = ["json"] }
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"
-wiremock = "0.6"
+wiremock = "0.6.4"
 mockall = "0.14"
 tempfile = "3"
 rstest = "0.26"
