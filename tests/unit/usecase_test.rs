@@ -2,18 +2,21 @@
 //!
 //! These tests verify the business logic in use cases using mock repositories.
 
+use chrono::Utc;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use chrono::Utc;
 
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use zercle_rust_template::config::Settings;
 use zercle_rust_template::domain::entities::{
-    CreateUser, CreateTask, Task, TaskPriority, TaskStatus, User,
+    CreateTask, CreateTaskRequest, CreateUser, Task, TaskPriority, TaskStatus, UpdateTaskRequest,
+    User,
 };
 use zercle_rust_template::domain::repositories::{TaskRepository, UserRepository};
-use zercle_rust_template::domain::usecases::{TaskUsecase, TaskUsecaseImpl, UserUsecase, UserUsecaseImpl};
-use zercle_rust_template::config::Settings;
-use async_trait::async_trait;
-use anyhow::{Result, Context};
+use zercle_rust_template::domain::usecases::{
+    TaskUsecase, TaskUsecaseError, TaskUsecaseImpl, UserUsecase, UserUsecaseImpl,
+};
 
 // Mock user repository for testing
 struct MockUserRepository {
@@ -173,7 +176,9 @@ impl TaskRepository for MockTaskRepository {
 
 mod user_usecase_tests {
     use super::*;
-    use zercle_rust_template::domain::entities::{CreateUserRequest, LoginRequest};
+    use zercle_rust_template::domain::entities::{
+        CreateUserRequest, LoginRequest, UpdateUserRequest,
+    };
 
     /// Test successful user registration
     #[tokio::test]
@@ -323,6 +328,176 @@ mod user_usecase_tests {
 
         let fake_id = Uuid::new_v4();
         let result = usecase.get_profile(fake_id).await;
+        assert!(result.is_err());
+    }
+
+    /// Test update user profile success
+    #[tokio::test]
+    async fn test_update_user_success() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo.clone(), &settings);
+
+        // Register first
+        let register_req = CreateUserRequest {
+            email: "test@example.com".to_string(),
+            password: "Password123!".to_string(),
+            full_name: Some("Original Name".to_string()),
+            phone: Some("+1234567890".to_string()),
+        };
+        let auth_response = usecase.register(register_req).await.unwrap();
+
+        // Update profile
+        let update_req = UpdateUserRequest {
+            full_name: Some("Updated Name".to_string()),
+            phone: Some("+0987654321".to_string()),
+        };
+
+        let result = usecase
+            .update_profile(auth_response.user.id, update_req)
+            .await;
+        assert!(result.is_ok());
+        let updated_user = result.unwrap();
+        assert_eq!(updated_user.full_name, Some("Updated Name".to_string()));
+        assert_eq!(updated_user.phone, Some("+0987654321".to_string()));
+    }
+
+    /// Test update user not found
+    #[tokio::test]
+    async fn test_update_user_not_found() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo, &settings);
+
+        let fake_id = Uuid::new_v4();
+        let update_req = UpdateUserRequest {
+            full_name: Some("Updated Name".to_string()),
+            phone: None,
+        };
+
+        let result = usecase.update_profile(fake_id, update_req).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    /// Test update user with short name
+    #[tokio::test]
+    async fn test_update_user_short_name() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo.clone(), &settings);
+
+        // Register first
+        let register_req = CreateUserRequest {
+            email: "test@example.com".to_string(),
+            password: "Password123!".to_string(),
+            full_name: Some("Test User".to_string()),
+            phone: None,
+        };
+        let auth_response = usecase.register(register_req).await.unwrap();
+
+        // Try to update with short name
+        let update_req = UpdateUserRequest {
+            full_name: Some("A".to_string()), // Too short
+            phone: None,
+        };
+
+        let result = usecase
+            .update_profile(auth_response.user.id, update_req)
+            .await;
+        assert!(result.is_err());
+    }
+
+    /// Test update user with empty request (no changes)
+    #[tokio::test]
+    async fn test_update_user_no_changes() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo.clone(), &settings);
+
+        // Register first
+        let register_req = CreateUserRequest {
+            email: "test@example.com".to_string(),
+            password: "Password123!".to_string(),
+            full_name: Some("Test User".to_string()),
+            phone: Some("+1234567890".to_string()),
+        };
+        let auth_response = usecase.register(register_req).await.unwrap();
+
+        // Empty update request should return existing user
+        let update_req = UpdateUserRequest {
+            full_name: None,
+            phone: None,
+        };
+
+        let result = usecase
+            .update_profile(auth_response.user.id, update_req)
+            .await;
+        assert!(result.is_ok());
+        let user = result.unwrap();
+        assert_eq!(user.full_name, Some("Test User".to_string()));
+    }
+
+    /// Test list users
+    #[tokio::test]
+    async fn test_list_users() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo.clone(), &settings);
+
+        // Register multiple users
+        for i in 0..5 {
+            let register_req = CreateUserRequest {
+                email: format!("user{}@example.com", i),
+                password: "Password123!".to_string(),
+                full_name: None,
+                phone: None,
+            };
+            usecase.register(register_req).await.unwrap();
+        }
+
+        let result = usecase.list_users(10, 0).await;
+        assert!(result.is_ok());
+        let (users, total) = result.unwrap();
+        assert_eq!(users.len(), 5);
+        assert_eq!(total, 5);
+    }
+
+    /// Test delete account
+    #[tokio::test]
+    async fn test_delete_account() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo.clone(), &settings);
+
+        // Register first
+        let register_req = CreateUserRequest {
+            email: "test@example.com".to_string(),
+            password: "Password123!".to_string(),
+            full_name: None,
+            phone: None,
+        };
+        let auth_response = usecase.register(register_req).await.unwrap();
+
+        // Delete account
+        let result = usecase.delete_account(auth_response.user.id).await;
+        assert!(result.is_ok());
+
+        // Verify user is deleted
+        let get_result = usecase.get_profile(auth_response.user.id).await;
+        assert!(get_result.is_err());
+    }
+
+    /// Test delete account not found
+    #[tokio::test]
+    async fn test_delete_account_not_found() {
+        let settings = Settings::from_env().unwrap();
+        let mock_repo = Arc::new(MockUserRepository::new());
+        let usecase = UserUsecaseImpl::new(mock_repo, &settings);
+
+        let fake_id = Uuid::new_v4();
+        let result = usecase.delete_account(fake_id).await;
         assert!(result.is_err());
     }
 }
@@ -498,5 +673,226 @@ mod task_usecase_tests {
         assert!(result.is_ok());
         let (tasks, _) = result.unwrap();
         assert_eq!(tasks.len(), 5);
+    }
+
+    // =========================================================================
+    // Update Task Tests
+    // =========================================================================
+
+    /// Test successful task update
+    #[tokio::test]
+    async fn test_update_task_success() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let req = CreateTaskRequest {
+            title: "Original Title".to_string(),
+            description: Some("Original Description".to_string()),
+            priority: Some(TaskPriority::Low),
+            due_date: None,
+        };
+
+        let created = usecase.create_task(user_id, req).await.unwrap();
+
+        let update_req = UpdateTaskRequest {
+            title: Some("Updated Title".to_string()),
+            description: Some("Updated Description".to_string()),
+            status: Some(TaskStatus::InProgress),
+            priority: Some(TaskPriority::High),
+            due_date: None,
+        };
+
+        let result = usecase.update_task(created.id, user_id, update_req).await;
+        assert!(result.is_ok());
+        let updated_task = result.unwrap();
+        assert_eq!(updated_task.title, "Updated Title");
+        assert_eq!(
+            updated_task.description,
+            Some("Updated Description".to_string())
+        );
+        assert_eq!(updated_task.status, TaskStatus::InProgress);
+        assert_eq!(updated_task.priority, TaskPriority::High);
+    }
+
+    /// Test task update not owned by user
+    #[tokio::test]
+    async fn test_update_task_not_owned() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let other_user_id = Uuid::new_v4();
+        let req = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let created = usecase.create_task(user_id, req).await.unwrap();
+
+        let update_req = UpdateTaskRequest {
+            title: Some("Hacked Title".to_string()),
+            description: None,
+            status: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let result = usecase
+            .update_task(created.id, other_user_id, update_req)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not owned"));
+    }
+
+    /// Test task update not found
+    #[tokio::test]
+    async fn test_update_task_not_found() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let fake_id = Uuid::new_v4();
+
+        let update_req = UpdateTaskRequest {
+            title: Some("Updated Title".to_string()),
+            description: None,
+            status: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let result = usecase.update_task(fake_id, user_id, update_req).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    /// Test marking task as completed successfully
+    #[tokio::test]
+    async fn test_mark_task_completed_success() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let req = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let created = usecase.create_task(user_id, req).await.unwrap();
+        assert_eq!(created.status, TaskStatus::Pending);
+
+        let update_req = UpdateTaskRequest {
+            title: None,
+            description: None,
+            status: Some(TaskStatus::Completed),
+            priority: None,
+            due_date: None,
+        };
+
+        let result = usecase.update_task(created.id, user_id, update_req).await;
+        assert!(result.is_ok());
+        let completed_task = result.unwrap();
+        assert_eq!(completed_task.status, TaskStatus::Completed);
+        assert!(completed_task.completed_at.is_some());
+    }
+
+    /// Test marking task completed not owned
+    #[tokio::test]
+    async fn test_mark_task_completed_not_owned() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let other_user_id = Uuid::new_v4();
+        let req = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let created = usecase.create_task(user_id, req).await.unwrap();
+
+        let update_req = UpdateTaskRequest {
+            title: None,
+            description: None,
+            status: Some(TaskStatus::Completed),
+            priority: None,
+            due_date: None,
+        };
+
+        let result = usecase
+            .update_task(created.id, other_user_id, update_req)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not owned"));
+    }
+
+    /// Test update with empty request (no changes)
+    #[tokio::test]
+    async fn test_update_task_no_changes() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let req = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: Some("Description".to_string()),
+            priority: None,
+            due_date: None,
+        };
+
+        let created = usecase.create_task(user_id, req).await.unwrap();
+
+        // Empty update request should still return the task
+        let update_req = UpdateTaskRequest {
+            title: None,
+            description: None,
+            status: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let result = usecase.update_task(created.id, user_id, update_req).await;
+        assert!(result.is_ok());
+        let updated_task = result.unwrap();
+        assert_eq!(updated_task.title, "Test Task");
+        assert_eq!(updated_task.status, TaskStatus::Pending);
+    }
+
+    /// Test update task with invalid title
+    #[tokio::test]
+    async fn test_update_task_invalid_title() {
+        let mock_repo = Arc::new(MockTaskRepository::new());
+        let usecase = TaskUsecaseImpl::new(mock_repo.clone());
+
+        let user_id = Uuid::new_v4();
+        let req = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let created = usecase.create_task(user_id, req).await.unwrap();
+
+        let update_req = UpdateTaskRequest {
+            title: Some("".to_string()), // Empty title should fail validation
+            description: None,
+            status: None,
+            priority: None,
+            due_date: None,
+        };
+
+        let result = usecase.update_task(created.id, user_id, update_req).await;
+        assert!(result.is_err());
     }
 }

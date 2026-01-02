@@ -9,25 +9,26 @@ use validator::{Validate, ValidationErrors};
 pub enum TaskValidationError {
     #[error("Title validation failed: {0}")]
     TitleError(String),
-    
+
     #[error("Description validation failed: {0}")]
     DescriptionError(String),
-    
+
     #[error("Due date validation failed: {0}")]
     DueDateError(String),
-    
+
     #[error("Status validation failed: {0}")]
     StatusError(String),
-    
+
     #[error("Priority validation failed: {0}")]
     PriorityError(String),
 }
 
 /// Task status enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     /// Task is pending and not yet started
+    #[default]
     Pending,
     /// Task is currently in progress
     InProgress,
@@ -50,7 +51,7 @@ impl TaskStatus {
             TaskStatus::Cancelled,
         ]
     }
-    
+
     /// Check if the status is a terminal state
     ///
     /// # Returns
@@ -58,7 +59,7 @@ impl TaskStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(self, TaskStatus::Completed | TaskStatus::Cancelled)
     }
-    
+
     /// Check if the status is active
     ///
     /// # Returns
@@ -68,19 +69,14 @@ impl TaskStatus {
     }
 }
 
-impl Default for TaskStatus {
-    fn default() -> Self {
-        TaskStatus::Pending
-    }
-}
-
 /// Task priority enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskPriority {
     /// Low priority task
     Low,
     /// Medium priority task
+    #[default]
     Medium,
     /// High priority task
     High,
@@ -101,7 +97,7 @@ impl TaskPriority {
             TaskPriority::Urgent,
         ]
     }
-    
+
     /// Get the numeric value of the priority for sorting
     ///
     /// # Returns
@@ -114,7 +110,7 @@ impl TaskPriority {
             TaskPriority::Urgent => 4,
         }
     }
-    
+
     /// Create TaskPriority from a numeric value
     ///
     /// # Arguments
@@ -130,12 +126,6 @@ impl TaskPriority {
             4 => Some(TaskPriority::Urgent),
             _ => None,
         }
-    }
-}
-
-impl Default for TaskPriority {
-    fn default() -> Self {
-        TaskPriority::Medium
     }
 }
 
@@ -189,7 +179,7 @@ impl Task {
             updated_at: now,
         }
     }
-    
+
     /// Mark the task as completed
     ///
     /// # Returns
@@ -203,7 +193,7 @@ impl Task {
         self.updated_at = Utc::now();
         true
     }
-    
+
     /// Update the task status
     ///
     /// # Arguments
@@ -217,17 +207,17 @@ impl Task {
         }
         self.status = status;
         self.updated_at = Utc::now();
-        
+
         // Update completed_at if status is completed
         if status == TaskStatus::Completed {
             self.completed_at = Some(Utc::now());
         } else {
             self.completed_at = None;
         }
-        
+
         true
     }
-    
+
     /// Check if the task is overdue
     ///
     /// # Returns
@@ -244,16 +234,20 @@ impl Task {
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct CreateTaskRequest {
     /// Task title (min 1, max 255 characters)
-    #[validate(length(min = 1, max = 255, message = "Title must be between 1 and 255 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 255,
+        message = "Title must be between 1 and 255 characters"
+    ))]
     pub title: String,
-    
+
     /// Optional task description
     #[validate(length(max = 5000, message = "Description must not exceed 5000 characters"))]
     pub description: Option<String>,
-    
+
     /// Task priority (defaults to Medium if not specified)
     pub priority: Option<TaskPriority>,
-    
+
     /// Optional due date
     pub due_date: Option<DateTime<Utc>>,
 }
@@ -271,29 +265,35 @@ impl CreateTaskRequest {
                 for msg in error_messages {
                     if field == "title" {
                         return Err(TaskValidationError::TitleError(
-                            msg.message.as_deref().unwrap_or("Invalid title").to_string()
+                            msg.message
+                                .as_deref()
+                                .unwrap_or("Invalid title")
+                                .to_string(),
                         ));
                     } else if field == "description" {
                         return Err(TaskValidationError::DescriptionError(
-                            msg.message.as_deref().unwrap_or("Invalid description").to_string()
+                            msg.message
+                                .as_deref()
+                                .unwrap_or("Invalid description")
+                                .to_string(),
                         ));
                     }
                 }
             }
         }
-        
+
         // Validate due date is in the future
         if let Some(due_date) = self.due_date {
             if due_date < Utc::now() {
                 return Err(TaskValidationError::DueDateError(
-                    "Due date must be in the future".to_string()
+                    "Due date must be in the future".to_string(),
                 ));
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get the priority with default fallback
     ///
     /// # Returns
@@ -307,19 +307,23 @@ impl CreateTaskRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct UpdateTaskRequest {
     /// Optional new title
-    #[validate(length(min = 1, max = 255, message = "Title must be between 1 and 255 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 255,
+        message = "Title must be between 1 and 255 characters"
+    ))]
     pub title: Option<String>,
-    
+
     /// Optional new description
     #[validate(length(max = 5000, message = "Description must not exceed 5000 characters"))]
     pub description: Option<String>,
-    
+
     /// Optional new status
     pub status: Option<TaskStatus>,
-    
+
     /// Optional new priority
     pub priority: Option<TaskPriority>,
-    
+
     /// Optional new due date
     pub due_date: Option<DateTime<Utc>>,
 }
@@ -337,29 +341,35 @@ impl UpdateTaskRequest {
                 for msg in error_messages {
                     if field == "title" {
                         return Err(TaskValidationError::TitleError(
-                            msg.message.as_deref().unwrap_or("Invalid title").to_string()
+                            msg.message
+                                .as_deref()
+                                .unwrap_or("Invalid title")
+                                .to_string(),
                         ));
                     } else if field == "description" {
                         return Err(TaskValidationError::DescriptionError(
-                            msg.message.as_deref().unwrap_or("Invalid description").to_string()
+                            msg.message
+                                .as_deref()
+                                .unwrap_or("Invalid description")
+                                .to_string(),
                         ));
                     }
                 }
             }
         }
-        
+
         // Validate due date is in the future if provided
         if let Some(due_date) = self.due_date {
             if due_date < Utc::now() {
                 return Err(TaskValidationError::DueDateError(
-                    "Due date must be in the future".to_string()
+                    "Due date must be in the future".to_string(),
                 ));
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Check if the update request has any fields to update
     ///
     /// # Returns
@@ -403,7 +413,7 @@ impl CreateTask {
 }
 
 /// Data structure for updating a task (repository layer)
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct UpdateTask {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -416,52 +426,44 @@ pub struct UpdateTask {
 impl UpdateTask {
     /// Create a new UpdateTask instance
     pub fn new() -> Self {
-        Self {
-            title: None,
-            description: None,
-            status: None,
-            priority: None,
-            due_date: None,
-            completed_at: None,
-        }
+        Self::default()
     }
-    
-    /// Set the title
+
     pub fn with_title(mut self, title: String) -> Self {
         self.title = Some(title);
         self
     }
-    
+
     /// Set the description
     pub fn with_description(mut self, description: Option<String>) -> Self {
         self.description = description;
         self
     }
-    
+
     /// Set the status
     pub fn with_status(mut self, status: TaskStatus) -> Self {
         self.status = Some(status);
         self
     }
-    
+
     /// Set the priority
     pub fn with_priority(mut self, priority: TaskPriority) -> Self {
         self.priority = Some(priority);
         self
     }
-    
+
     /// Set the due date
     pub fn with_due_date(mut self, due_date: Option<DateTime<Utc>>) -> Self {
         self.due_date = due_date;
         self
     }
-    
+
     /// Set the completed_at timestamp
     pub fn with_completed_at(mut self, completed_at: Option<DateTime<Utc>>) -> Self {
         self.completed_at = Some(completed_at);
         self
     }
-    
+
     /// Check if there are any updates
     pub fn has_updates(&self) -> bool {
         self.title.is_some()
@@ -588,7 +590,7 @@ mod tests {
         );
 
         assert!(task.is_overdue());
-        
+
         task.status = TaskStatus::Completed;
         assert!(!task.is_overdue());
     }

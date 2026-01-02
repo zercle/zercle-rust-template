@@ -3,12 +3,13 @@
 //! These tests verify the validation logic in entities without requiring
 //! a database connection.
 
-use zercle_rust_template::domain::entities::{
-    CreateUserRequest, CreateTaskRequest, LoginRequest, TaskStatus, TaskPriority,
-    UpdateUserRequest, UpdateTaskRequest, UserValidationError, TaskValidationError,
-};
 use chrono::{Duration, Utc};
 use uuid::Uuid;
+use zercle_rust_template::domain::entities::{
+    CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus,
+    UpdateTaskRequest, UpdateUserRequest, UserValidationError,
+};
+use zercle_rust_template::domain::task::TaskValidationError;
 
 mod user_validation_tests {
     use super::*;
@@ -362,5 +363,230 @@ mod task_validation_tests {
         assert_eq!(TaskPriority::from_value(3), Some(TaskPriority::High));
         assert_eq!(TaskPriority::from_value(4), Some(TaskPriority::Urgent));
         assert_eq!(TaskPriority::from_value(5), None);
+    }
+
+    // =========================================================================
+    // Edge Case Tests
+    // =========================================================================
+
+    /// Test CreateTaskRequest with max length title (255 characters)
+    #[test]
+    fn test_create_task_request_max_length_title() {
+        let max_length_title = "a".repeat(255);
+        let request = CreateTaskRequest {
+            title: max_length_title,
+            description: None,
+            priority: None,
+            due_date: Some(Utc::now() + Duration::days(1)),
+        };
+
+        assert!(request.validate_request().is_ok());
+    }
+
+    /// Test CreateTaskRequest with title exceeding max length by 1
+    #[test]
+    fn test_create_task_request_title_exceeds_max_by_one() {
+        let over_length_title = "a".repeat(256);
+        let request = CreateTaskRequest {
+            title: over_length_title,
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        assert!(request.validate_request().is_err());
+    }
+
+    /// Test CreateTaskRequest with special characters in title
+    #[test]
+    fn test_create_task_request_special_characters() {
+        let request = CreateTaskRequest {
+            title: "Task with special chars @#$%^&*()_+=[]{}|;:".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        // Special characters are allowed, should pass validation
+        assert!(request.validate_request().is_ok());
+    }
+
+    /// Test CreateTaskRequest with unicode characters in title
+    #[test]
+    fn test_create_task_request_unicode_characters() {
+        let request = CreateTaskRequest {
+            title: "Tâsk with ünïcödé chàrâctërs 你好".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        // Unicode characters are allowed, should pass validation
+        assert!(request.validate_request().is_ok());
+    }
+
+    /// Test CreateTaskRequest with whitespace only title
+    #[test]
+    fn test_create_task_request_whitespace_title() {
+        let request = CreateTaskRequest {
+            title: "   ".to_string(),
+            description: None,
+            priority: None,
+            due_date: None,
+        };
+
+        // Whitespace-only title is technically valid (min length 1, whitespace counts)
+        // The business logic may want to reject this, but validation passes
+        let result = request.validate_request();
+        assert!(result.is_ok());
+    }
+
+    /// Test TaskStatus - verify all status transitions
+    #[test]
+    fn test_task_status_all_transitions() {
+        // From Pending, can go to any status
+        let pending = TaskStatus::Pending;
+        assert!(!pending.is_terminal());
+        assert!(pending.is_active());
+
+        // From InProgress, can go to any status
+        let in_progress = TaskStatus::InProgress;
+        assert!(!in_progress.is_terminal());
+        assert!(in_progress.is_active());
+
+        // From Completed, is terminal
+        let completed = TaskStatus::Completed;
+        assert!(completed.is_terminal());
+        assert!(!completed.is_active());
+
+        // From Cancelled, is terminal
+        let cancelled = TaskStatus::Cancelled;
+        assert!(cancelled.is_terminal());
+        assert!(!cancelled.is_active());
+    }
+
+    /// Test TaskStatus - verify status is not equal to others
+    #[test]
+    fn test_task_status_inequality() {
+        assert_ne!(TaskStatus::Pending, TaskStatus::InProgress);
+        assert_ne!(TaskStatus::Pending, TaskStatus::Completed);
+        assert_ne!(TaskStatus::Pending, TaskStatus::Cancelled);
+        assert_ne!(TaskStatus::InProgress, TaskStatus::Completed);
+        assert_ne!(TaskStatus::InProgress, TaskStatus::Cancelled);
+        assert_ne!(TaskStatus::Completed, TaskStatus::Cancelled);
+    }
+
+    /// Test TaskPriority - verify priority ordering
+    #[test]
+    fn test_task_priority_ordering() {
+        assert!(TaskPriority::Low.value() < TaskPriority::Medium.value());
+        assert!(TaskPriority::Medium.value() < TaskPriority::High.value());
+        assert!(TaskPriority::High.value() < TaskPriority::Urgent.value());
+        assert!(TaskPriority::Urgent.value() > TaskPriority::Low.value());
+    }
+
+    /// Test TaskPriority - verify from_value edge cases
+    #[test]
+    fn test_task_priority_from_value_edge_cases() {
+        // Valid values
+        assert!(TaskPriority::from_value(0).is_none());
+        assert!(TaskPriority::from_value(1).is_some());
+        assert!(TaskPriority::from_value(4).is_some());
+        assert!(TaskPriority::from_value(5).is_none());
+        assert!(TaskPriority::from_value(255).is_none());
+        assert!(TaskPriority::from_value(u8::MAX).is_none());
+    }
+
+    /// Test CreateTaskRequest with due date exactly at current time
+    #[test]
+    fn test_create_task_request_due_date_at_now() {
+        let request = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: None,
+            priority: None,
+            due_date: Some(Utc::now()),
+        };
+
+        // Due date at exactly now should fail (must be in future)
+        let result = request.validate_request();
+        assert!(result.is_err());
+    }
+
+    /// Test CreateTaskRequest with due date 1 second in future
+    #[test]
+    fn test_create_task_request_due_date_one_second_future() {
+        let request = CreateTaskRequest {
+            title: "Test Task".to_string(),
+            description: None,
+            priority: None,
+            due_date: Some(Utc::now() + Duration::seconds(1)),
+        };
+
+        // Due date 1 second in future should pass
+        assert!(request.validate_request().is_ok());
+    }
+
+    /// Test CreateTaskRequest with very long description (boundary)
+    #[test]
+    fn test_create_task_request_max_length_description() {
+        let max_length_desc = "a".repeat(5000);
+        let request = CreateTaskRequest {
+            title: "Valid Title".to_string(),
+            description: Some(max_length_desc),
+            priority: None,
+            due_date: None,
+        };
+
+        assert!(request.validate_request().is_ok());
+    }
+
+    /// Test CreateTaskRequest with description exceeding max length
+    #[test]
+    fn test_create_task_request_description_exceeds_max() {
+        let over_length_desc = "a".repeat(5001);
+        let request = CreateTaskRequest {
+            title: "Valid Title".to_string(),
+            description: Some(over_length_desc),
+            priority: None,
+            due_date: None,
+        };
+
+        assert!(request.validate_request().is_err());
+    }
+
+    /// Test CreateTaskRequest with all priority levels
+    #[test]
+    fn test_create_task_request_all_priorities() {
+        for priority in [
+            TaskPriority::Low,
+            TaskPriority::Medium,
+            TaskPriority::High,
+            TaskPriority::Urgent,
+        ] {
+            let request = CreateTaskRequest {
+                title: "Test Task".to_string(),
+                description: None,
+                priority: Some(priority),
+                due_date: None,
+            };
+            assert!(request.validate_request().is_ok());
+        }
+    }
+
+    /// Test CreateTaskRequest with all statuses in update
+    #[test]
+    fn test_update_task_request_all_statuses() {
+        for status in TaskStatus::all() {
+            let request = UpdateTaskRequest {
+                title: None,
+                description: None,
+                status: Some(status),
+                priority: None,
+                due_date: None,
+            };
+            // All statuses are valid in update request
+            assert!(request.validate_request().is_ok());
+            assert!(request.has_updates());
+        }
     }
 }

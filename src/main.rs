@@ -7,10 +7,10 @@
 //! - HTTP server initialization
 //! - Graceful shutdown handling
 
+use anyhow::{bail, Context, Result};
+use std::panic;
 use zercle_rust_template::app::App;
 use zercle_rust_template::config::Settings;
-use anyhow::{Context, Result, bail};
-use std::panic;
 
 /// Main entry point for the application
 ///
@@ -66,19 +66,14 @@ async fn main() -> Result<()> {
         settings.database.port,
         settings.database.name
     );
-    tracing::info!(
-        "JWT expiration: {} hours",
-        settings.jwt.expiration_hours
-    );
+    tracing::info!("JWT expiration: {} hours", settings.jwt.expiration_hours);
 
     // Build and run the application
-    let app = App::new().await
+    let app = App::new()
+        .await
         .context("Failed to initialize application")?;
 
-    tracing::info!(
-        "Server listening on {}",
-        app.server_addr()
-    );
+    tracing::info!("Server listening on {}", app.server_addr());
 
     // Run the server (this will block until shutdown)
     if let Err(e) = app.run_server().await {
@@ -106,7 +101,8 @@ pub async fn run_with_settings(_settings: Settings) -> Result<()> {
 
     tracing::info!("Starting application with custom settings");
 
-    let app = App::new().await
+    let app = App::new()
+        .await
         .context("Failed to initialize application")?;
 
     if let Err(e) = app.run_server().await {

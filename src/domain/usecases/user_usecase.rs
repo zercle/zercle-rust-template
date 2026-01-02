@@ -9,8 +9,10 @@ use crate::domain::entities::{
 };
 use crate::domain::repositories::UserRepository;
 use anyhow::{Context, Result};
-use argon2::{password_hash::rand_core::OsRng, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use argon2::password_hash::Error as PasswordHashError;
+use argon2::{
+    password_hash::rand_core::OsRng, Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, EncodingKey, Header};
@@ -49,10 +51,10 @@ impl From<anyhow::Error> for UserUsecaseError {
 /// JWT claims structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,      // User ID
-    pub email: String,    // User email
-    pub exp: i64,         // Expiration time
-    pub iat: i64,         // Issued at
+    pub sub: String,   // User ID
+    pub email: String, // User email
+    pub exp: i64,      // Expiration time
+    pub iat: i64,      // Issued at
 }
 
 /// Response structure for login/registration
@@ -128,12 +130,14 @@ impl UserUsecaseImpl {
     fn hash_password(&self, password: &str) -> Result<String, UserUsecaseError> {
         use argon2::password_hash::SaltString;
         let password_bytes = password.as_bytes();
-        
+
         // Generate a random salt
         let salt = SaltString::generate(&mut OsRng);
-        let hashed_password = self.argon2.hash_password(password_bytes, &salt)
+        let hashed_password = self
+            .argon2
+            .hash_password(password_bytes, &salt)
             .map_err(|e| UserUsecaseError::AuthError(format!("Failed to hash password: {}", e)))?;
-        
+
         Ok(hashed_password.to_string())
     }
 
@@ -148,8 +152,9 @@ impl UserUsecaseImpl {
     fn verify_password(&self, password: &str, hash: &str) -> Result<bool, UserUsecaseError> {
         let password_bytes = password.as_bytes();
 
-        let parsed_hash = PasswordHash::new(hash)
-            .map_err(|e| UserUsecaseError::AuthError(format!("Failed to parse password hash: {}", e)))?;
+        let parsed_hash = PasswordHash::new(hash).map_err(|e| {
+            UserUsecaseError::AuthError(format!("Failed to parse password hash: {}", e))
+        })?;
 
         let result = self.argon2.verify_password(password_bytes, &parsed_hash);
 
@@ -247,7 +252,7 @@ impl UserUsecase for UserUsecaseImpl {
             .find_by_email(&req.email)
             .await
             .context("Failed to find user by email")?
-            .ok_or_else(|| UserUsecaseError::InvalidCredentials("Invalid email or password".to_string()))?;
+            .ok_or(UserUsecaseError::InvalidCredentials("Invalid email or password".to_string()))?;
 
         // Verify password
         let password_valid = self.verify_password(&req.password, &user.password_hash)?;
@@ -271,7 +276,7 @@ impl UserUsecase for UserUsecaseImpl {
             .find_by_id(user_id)
             .await
             .context("Failed to find user by id")?
-            .ok_or_else(|| UserUsecaseError::UserNotFound(user_id))?;
+            .ok_or(UserUsecaseError::UserNotFound(user_id))?;
 
         Ok(user)
     }
@@ -298,7 +303,7 @@ impl UserUsecase for UserUsecaseImpl {
             .find_by_id(user_id)
             .await
             .context("Failed to find user by id")?
-            .ok_or_else(|| UserUsecaseError::UserNotFound(user_id))?;
+            .ok_or(UserUsecaseError::UserNotFound(user_id))?;
 
         // Apply updates
         if let Some(full_name) = req.full_name {
@@ -332,7 +337,7 @@ impl UserUsecase for UserUsecaseImpl {
             .find_by_id(user_id)
             .await
             .context("Failed to find user by id")?
-            .ok_or_else(|| UserUsecaseError::UserNotFound(user_id))?;
+            .ok_or(UserUsecaseError::UserNotFound(user_id))?;
 
         self.user_repo
             .delete(user_id)

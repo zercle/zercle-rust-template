@@ -114,10 +114,32 @@ impl Migrations {
     /// # Returns
     /// `Result<()>` - Ok if successful, error otherwise
     pub async fn create_users_table(pool: &Pool<Postgres>) -> Result<()> {
-        sqlx::query(CREATE_USERS_TABLE_SQL)
+        // Create users table
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                full_name VARCHAR(255),
+                phone VARCHAR(20),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await
+        .context("Failed to create users table")?;
+
+        // Create users indexes
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
             .execute(pool)
             .await
-            .context("Failed to create users table")?;
+            .context("Failed to create users email index")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at)")
+            .execute(pool)
+            .await
+            .context("Failed to create users created_at index")?;
 
         Ok(())
     }
@@ -130,10 +152,50 @@ impl Migrations {
     /// # Returns
     /// `Result<()>` - Ok if successful, error otherwise
     pub async fn create_tasks_table(pool: &Pool<Postgres>) -> Result<()> {
-        sqlx::query(CREATE_TASKS_TABLE_SQL)
+        // Create tasks table
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS tasks (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+                due_date TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await
+        .context("Failed to create tasks table")?;
+
+        // Create tasks indexes
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)")
             .execute(pool)
             .await
-            .context("Failed to create tasks table")?;
+            .context("Failed to create tasks user_id index")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+            .execute(pool)
+            .await
+            .context("Failed to create tasks status index")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)")
+            .execute(pool)
+            .await
+            .context("Failed to create tasks priority index")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
+            .execute(pool)
+            .await
+            .context("Failed to create tasks due_date index")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)")
+            .execute(pool)
+            .await
+            .context("Failed to create tasks created_at index")?;
 
         Ok(())
     }
@@ -162,10 +224,20 @@ impl Migrations {
     /// # Returns
     /// `Result<()>` - Ok if successful, error otherwise
     pub async fn create_users_trigger(pool: &Pool<Postgres>) -> Result<()> {
-        sqlx::query(CREATE_USERS_TRIGGER_SQL)
+        sqlx::query("DROP TRIGGER IF EXISTS update_users_updated_at ON users")
             .execute(pool)
             .await
-            .context("Failed to create users updated_at trigger")?;
+            .context("Failed to drop users updated_at trigger")?;
+
+        sqlx::query(
+            "CREATE TRIGGER update_users_updated_at
+            BEFORE UPDATE ON users
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column()",
+        )
+        .execute(pool)
+        .await
+        .context("Failed to create users updated_at trigger")?;
 
         Ok(())
     }
@@ -178,10 +250,20 @@ impl Migrations {
     /// # Returns
     /// `Result<()>` - Ok if successful, error otherwise
     pub async fn create_tasks_trigger(pool: &Pool<Postgres>) -> Result<()> {
-        sqlx::query(CREATE_TASKS_TRIGGER_SQL)
+        sqlx::query("DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks")
             .execute(pool)
             .await
-            .context("Failed to create tasks updated_at trigger")?;
+            .context("Failed to drop tasks updated_at trigger")?;
+
+        sqlx::query(
+            "CREATE TRIGGER update_tasks_updated_at
+            BEFORE UPDATE ON tasks
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column()",
+        )
+        .execute(pool)
+        .await
+        .context("Failed to create tasks updated_at trigger")?;
 
         Ok(())
     }
@@ -213,7 +295,7 @@ impl Migrations {
         migrations_dir: P,
     ) -> Result<()> {
         let dir = migrations_dir.as_ref();
-        
+
         // Read all .sql files from the migrations directory
         let mut migration_files: Vec<_> = std::fs::read_dir(dir)
             .context("Failed to read migrations directory")?
@@ -325,10 +407,10 @@ impl Migrations {
 /// ```
 pub async fn migrate_from_settings(settings: &Settings) -> Result<()> {
     use crate::infrastructure::db::connection::connect;
-    
+
     let pool = connect(settings).await?;
     Migrations::run(&pool).await?;
-    
+
     Ok(())
 }
 

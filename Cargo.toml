@@ -5,6 +5,34 @@ edition = "2021"
 rust-version = "1.75"
 description = "A Rust-based template project using Axum framework with PostgreSQL"
 
+[[test]]
+name = "api_test"
+path = "tests/integration/api_test.rs"
+
+[[test]]
+name = "handler_test"
+path = "tests/unit/handler_tests/handler_test.rs"
+
+[[test]]
+name = "middleware_test"
+path = "tests/unit/middleware_tests/middleware_test.rs"
+
+[[test]]
+name = "settings_test"
+path = "tests/unit/config_tests/settings_test.rs"
+
+[[test]]
+name = "usecase_test"
+path = "tests/unit/usecase_test.rs"
+
+[[test]]
+name = "entity_validation_test"
+path = "tests/unit/entity_validation_test.rs"
+
+[[test]]
+name = "repository_test"
+path = "tests/unit/repository_test.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["multipart", "tower-log"] }
@@ -17,7 +45,7 @@ hyper-util = { version = "0.1", features = ["full"] }
 tokio = { version = "1.35", features = ["full"] }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

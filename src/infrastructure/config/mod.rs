@@ -123,7 +123,7 @@ pub fn load_from_file_with_env<P: AsRef<Path>>(path: P) -> Result<Settings> {
 pub fn load_config() -> Result<Settings> {
     // Get environment from SERVER_ENV variable or default to "local"
     let env = std::env::var("SERVER_ENV").unwrap_or_else(|_| "local".to_string());
-    
+
     // Construct config file path
     let config_path = format!("configs/{}.yaml", env);
     let path = Path::new(&config_path);

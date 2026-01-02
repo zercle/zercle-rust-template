@@ -8,11 +8,11 @@ use crate::domain::entities::{
 use crate::domain::usecases::{TaskUsecase, TaskUsecaseError, UserUsecase, UserUsecaseError};
 use crate::infrastructure::db::connection::DbPool;
 use crate::infrastructure::middleware::auth::UserId;
+use axum::http::StatusCode;
 use axum::{
     extract::{Extension, Path, Query},
     response::{IntoResponse, Json},
 };
-use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -70,7 +70,12 @@ pub struct PaginatedResponse<T> {
 
 impl<T> PaginatedResponse<T> {
     pub fn new(data: Vec<T>, total: i64, limit: i64, offset: i64) -> Self {
-        Self { data, total, limit, offset }
+        Self {
+            data,
+            total,
+            limit,
+            offset,
+        }
     }
 }
 
@@ -83,8 +88,12 @@ pub struct ListParams {
     pub offset: i64,
 }
 
-fn default_limit() -> i64 { 20 }
-fn default_offset() -> i64 { 0 }
+fn default_limit() -> i64 {
+    20
+}
+fn default_offset() -> i64 {
+    0
+}
 
 // ============================================================================
 // Auth Handlers
@@ -104,12 +113,14 @@ pub async fn register(
         ),
         Err(UserUsecaseError::UserAlreadyExists(email)) => (
             StatusCode::CONFLICT,
-            Json(ApiResponse::error(&format!("User already exists with email: {}", email))),
+            Json(ApiResponse::error(&format!(
+                "User already exists with email: {}",
+                email
+            ))),
         ),
-        Err(UserUsecaseError::ValidationError(msg)) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse::error(&msg)),
-        ),
+        Err(UserUsecaseError::ValidationError(msg)) => {
+            (StatusCode::BAD_REQUEST, Json(ApiResponse::error(&msg)))
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse::error(&e.to_string())),
@@ -135,14 +146,12 @@ pub async fn login(
                 token: response.token,
             })),
         ),
-        Err(UserUsecaseError::InvalidCredentials(msg)) => (
-            StatusCode::UNAUTHORIZED,
-            Json(ApiResponse::error(&msg)),
-        ),
-        Err(UserUsecaseError::ValidationError(msg)) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse::error(&msg)),
-        ),
+        Err(UserUsecaseError::InvalidCredentials(msg)) => {
+            (StatusCode::UNAUTHORIZED, Json(ApiResponse::error(&msg)))
+        }
+        Err(UserUsecaseError::ValidationError(msg)) => {
+            (StatusCode::BAD_REQUEST, Json(ApiResponse::error(&msg)))
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse::error(&e.to_string())),
@@ -188,10 +197,9 @@ pub async fn update_profile(
             StatusCode::NOT_FOUND,
             Json(ApiResponse::error("User not found")),
         ),
-        Err(UserUsecaseError::ValidationError(msg)) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse::error(&msg)),
-        ),
+        Err(UserUsecaseError::ValidationError(msg)) => {
+            (StatusCode::BAD_REQUEST, Json(ApiResponse::error(&msg)))
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse::error(&e.to_string())),
@@ -204,7 +212,13 @@ pub async fn delete_account(
     Extension(user_id): Extension<UserId>,
 ) -> impl IntoResponse {
     match user_usecase.delete_account(user_id.0).await {
-        Ok(_) => (StatusCode::NO_CONTENT, Json(ApiResponse::<()>::with_message(None, "Account deleted successfully"))),
+        Ok(_) => (
+            StatusCode::NO_CONTENT,
+            Json(ApiResponse::<()>::with_message(
+                None,
+                "Account deleted successfully",
+            )),
+        ),
         Err(UserUsecaseError::UserNotFound(_)) => (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::error("User not found")),
@@ -220,13 +234,19 @@ pub async fn list_users(
     Extension(user_usecase): Extension<Arc<dyn UserUsecase>>,
     Query(params): Query<ListParams>,
 ) -> impl IntoResponse {
-    let limit = if params.limit <= 0 || params.limit > 100 { 20 } else { params.limit };
+    let limit = if params.limit <= 0 || params.limit > 100 {
+        20
+    } else {
+        params.limit
+    };
     let offset = if params.offset < 0 { 0 } else { params.offset };
 
     match user_usecase.list_users(limit, offset).await {
         Ok((users, total)) => (
             StatusCode::OK,
-            Json(ApiResponse::success(PaginatedResponse::new(users, total, limit, offset))),
+            Json(ApiResponse::success(PaginatedResponse::new(
+                users, total, limit, offset,
+            ))),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -246,10 +266,9 @@ pub async fn create_task(
 ) -> impl IntoResponse {
     match task_usecase.create_task(user_id.0, req).await {
         Ok(task) => (StatusCode::CREATED, Json(ApiResponse::success(task))),
-        Err(TaskUsecaseError::ValidationError(msg)) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse::error(&msg)),
-        ),
+        Err(TaskUsecaseError::ValidationError(msg)) => {
+            (StatusCode::BAD_REQUEST, Json(ApiResponse::error(&msg)))
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse::error(&e.to_string())),
@@ -270,7 +289,9 @@ pub async fn get_task(
         ),
         Err(TaskUsecaseError::TaskNotOwned(_)) => (
             StatusCode::FORBIDDEN,
-            Json(ApiResponse::error("You don't have permission to access this task")),
+            Json(ApiResponse::error(
+                "You don't have permission to access this task",
+            )),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -284,13 +305,19 @@ pub async fn list_tasks(
     Extension(user_id): Extension<UserId>,
     Query(params): Query<ListParams>,
 ) -> impl IntoResponse {
-    let limit = if params.limit <= 0 || params.limit > 100 { 20 } else { params.limit };
+    let limit = if params.limit <= 0 || params.limit > 100 {
+        20
+    } else {
+        params.limit
+    };
     let offset = if params.offset < 0 { 0 } else { params.offset };
 
     match task_usecase.list_tasks(user_id.0, limit, offset).await {
         Ok((tasks, total)) => (
             StatusCode::OK,
-            Json(ApiResponse::success(PaginatedResponse::new(tasks, total, limit, offset))),
+            Json(ApiResponse::success(PaginatedResponse::new(
+                tasks, total, limit, offset,
+            ))),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -313,12 +340,13 @@ pub async fn update_task(
         ),
         Err(TaskUsecaseError::TaskNotOwned(_)) => (
             StatusCode::FORBIDDEN,
-            Json(ApiResponse::error("You don't have permission to update this task")),
+            Json(ApiResponse::error(
+                "You don't have permission to update this task",
+            )),
         ),
-        Err(TaskUsecaseError::ValidationError(msg)) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse::error(&msg)),
-        ),
+        Err(TaskUsecaseError::ValidationError(msg)) => {
+            (StatusCode::BAD_REQUEST, Json(ApiResponse::error(&msg)))
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse::error(&e.to_string())),
@@ -332,14 +360,22 @@ pub async fn delete_task(
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
     match task_usecase.delete_task(id, user_id.0).await {
-        Ok(_) => (StatusCode::NO_CONTENT, Json(ApiResponse::<()>::with_message(None, "Task deleted successfully"))),
+        Ok(_) => (
+            StatusCode::NO_CONTENT,
+            Json(ApiResponse::<()>::with_message(
+                None,
+                "Task deleted successfully",
+            )),
+        ),
         Err(TaskUsecaseError::TaskNotFound(_)) => (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::error("Task not found")),
         ),
         Err(TaskUsecaseError::TaskNotOwned(_)) => (
             StatusCode::FORBIDDEN,
-            Json(ApiResponse::error("You don't have permission to delete this task")),
+            Json(ApiResponse::error(
+                "You don't have permission to delete this task",
+            )),
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -353,12 +389,18 @@ pub async fn delete_task(
 // ============================================================================
 
 pub async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(ApiResponse::<()>::with_message(None, "Service is healthy")))
+    (
+        StatusCode::OK,
+        Json(ApiResponse::<()>::with_message(None, "Service is healthy")),
+    )
 }
 
 pub async fn readiness_check(Extension(db): Extension<DbPool>) -> impl IntoResponse {
     match sqlx::query("SELECT 1").fetch_one(&db).await {
-        Ok(_) => (StatusCode::OK, Json(ApiResponse::<()>::with_message(None, "Service is ready"))),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ApiResponse::<()>::with_message(None, "Service is ready")),
+        ),
         Err(_) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ApiResponse::error("Database connection is not available")),
