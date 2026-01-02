@@ -143,7 +143,7 @@ impl Database {
     /// - size: Total number of connections in the pool
     /// - idle: Number of idle connections
     pub fn pool_size(&self) -> (u32, u32) {
-        (self.pool.size() as u32, self.pool.num_idle() as u32)
+        (self.pool.size(), self.pool.num_idle() as u32)
     }
 
     /// Close the database connection pool

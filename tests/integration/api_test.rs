@@ -3,7 +3,6 @@
 //! These tests verify the API endpoints with a real database connection.
 //! They test the full request/response cycle including authentication.
 
-use reqwest;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
@@ -32,7 +31,7 @@ async fn register_test_user(
     password: &str,
 ) -> reqwest::Result<String> {
     let response = client
-        .post(&format!("{}/api/v1/auth/register", base_url))
+        .post(format!("{}/api/v1/auth/register", base_url))
         .json(&serde_json::json!({
             "email": email,
             "password": password,
@@ -85,7 +84,7 @@ mod auth_tests {
 
         // Test registration
         let response = client
-            .post(&format!("{}/api/v1/auth/register", base_url))
+            .post(format!("{}/api/v1/auth/register", base_url))
             .json(&serde_json::json!({
                 "email": email,
                 "password": "Password123!",
@@ -104,7 +103,7 @@ mod auth_tests {
 
         // Test login with same credentials
         let response = client
-            .post(&format!("{}/api/v1/auth/login", base_url))
+            .post(format!("{}/api/v1/auth/login", base_url))
             .json(&serde_json::json!({
                 "email": email,
                 "password": "Password123!"
@@ -138,7 +137,7 @@ mod auth_tests {
 
         // First registration
         let response = client
-            .post(&format!("{}/api/v1/auth/register", base_url))
+            .post(format!("{}/api/v1/auth/register", base_url))
             .json(&serde_json::json!({
                 "email": email,
                 "password": "Password123!",
@@ -152,7 +151,7 @@ mod auth_tests {
 
         // Second registration with same email should fail
         let response = client
-            .post(&format!("{}/api/v1/auth/register", base_url))
+            .post(format!("{}/api/v1/auth/register", base_url))
             .json(&serde_json::json!({
                 "email": email,
                 "password": "Password123!",
@@ -193,7 +192,7 @@ mod task_tests {
 
         // Create a task
         let response = client
-            .post(&format!("{}/api/v1/tasks", base_url))
+            .post(format!("{}/api/v1/tasks", base_url))
             .header("Authorization", format!("Bearer {}", token))
             .json(&serde_json::json!({
                 "title": "Test Task",
@@ -210,7 +209,7 @@ mod task_tests {
 
         // Get the task
         let response = client
-            .get(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
@@ -223,7 +222,7 @@ mod task_tests {
 
         // Update the task
         let response = client
-            .put(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .put(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token))
             .json(&serde_json::json!({
                 "title": "Updated Task",
@@ -240,7 +239,7 @@ mod task_tests {
 
         // List tasks
         let response = client
-            .get(&format!("{}/api/v1/tasks", base_url))
+            .get(format!("{}/api/v1/tasks", base_url))
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
@@ -252,7 +251,7 @@ mod task_tests {
 
         // Delete the task
         let response = client
-            .delete(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .delete(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
@@ -262,7 +261,7 @@ mod task_tests {
 
         // Verify task is deleted
         let response = client
-            .get(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
@@ -289,7 +288,7 @@ mod task_tests {
 
         // Try to access protected endpoint without token
         let response = client
-            .get(&format!("{}/api/v1/tasks", base_url))
+            .get(format!("{}/api/v1/tasks", base_url))
             .send()
             .await
             .unwrap();
@@ -298,7 +297,7 @@ mod task_tests {
 
         // Try with invalid token
         let response = client
-            .get(&format!("{}/api/v1/tasks", base_url))
+            .get(format!("{}/api/v1/tasks", base_url))
             .header("Authorization", "Bearer invalid_token")
             .send()
             .await
@@ -336,7 +335,7 @@ mod task_tests {
 
         // User 1 creates a task
         let response = client
-            .post(&format!("{}/api/v1/tasks", base_url))
+            .post(format!("{}/api/v1/tasks", base_url))
             .header("Authorization", format!("Bearer {}", token1))
             .json(&serde_json::json!({
                 "title": "User 1's Task"
@@ -351,7 +350,7 @@ mod task_tests {
 
         // User 2 tries to access User 1's task
         let response = client
-            .get(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token2))
             .send()
             .await
@@ -361,7 +360,7 @@ mod task_tests {
 
         // User 2 tries to delete User 1's task
         let response = client
-            .delete(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .delete(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token2))
             .send()
             .await
@@ -371,7 +370,7 @@ mod task_tests {
 
         // User 1 can access their own task
         let response = client
-            .get(&format!("{}/api/v1/tasks/{}", base_url, task_id))
+            .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
             .header("Authorization", format!("Bearer {}", token1))
             .send()
             .await
@@ -402,7 +401,7 @@ mod health_tests {
 
         // Test health endpoint (no auth required)
         let response = client
-            .get(&format!("{}/health", base_url))
+            .get(format!("{}/health", base_url))
             .send()
             .await
             .unwrap();
@@ -414,7 +413,7 @@ mod health_tests {
 
         // Test readiness endpoint (requires DB connection)
         let response = client
-            .get(&format!("{}/readiness", base_url))
+            .get(format!("{}/readiness", base_url))
             .send()
             .await
             .unwrap();

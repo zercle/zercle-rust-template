@@ -4,6 +4,7 @@ use sqlx::{Pool, Postgres, Row};
 use std::path::Path;
 
 /// Migration SQL for creating the users table
+#[allow(dead_code)]
 const CREATE_USERS_TABLE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -20,6 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
 "#;
 
 /// Migration SQL for creating the tasks table
+#[allow(dead_code)]
 const CREATE_TASKS_TABLE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,6 +55,7 @@ $$ language 'plpgsql';
 "#;
 
 /// Migration SQL for creating updated_at trigger for users table
+#[allow(dead_code)]
 const CREATE_USERS_TRIGGER_SQL: &str = r#"
 DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at
@@ -62,6 +65,7 @@ CREATE TRIGGER update_users_updated_at
 "#;
 
 /// Migration SQL for creating updated_at trigger for tasks table
+#[allow(dead_code)]
 const CREATE_TASKS_TRIGGER_SQL: &str = r#"
 DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
 CREATE TRIGGER update_tasks_updated_at

@@ -4,10 +4,9 @@
 
 use axum::http::StatusCode;
 use chrono::{Duration, Utc};
-use uuid::Uuid;
 use zercle_rust_template::domain::entities::{
     CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus,
-    UpdateTaskRequest, User,
+    UpdateTaskRequest,
 };
 use zercle_rust_template::infrastructure::http::handlers::ApiResponse;
 

@@ -4,7 +4,6 @@
 //! a database connection.
 
 use chrono::{Duration, Utc};
-use uuid::Uuid;
 use zercle_rust_template::domain::entities::{
     CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus,
     UpdateTaskRequest, UpdateUserRequest, UserValidationError,

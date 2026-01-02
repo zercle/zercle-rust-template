@@ -6,16 +6,16 @@ use chrono::Utc;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use anyhow::{Context, Result};
+use anyhow::{Result};
 use async_trait::async_trait;
 use zercle_rust_template::config::Settings;
 use zercle_rust_template::domain::entities::{
-    CreateTask, CreateTaskRequest, CreateUser, Task, TaskPriority, TaskStatus, UpdateTaskRequest,
+    CreateTask, CreateUser, Task, TaskPriority, TaskStatus, UpdateTaskRequest,
     User,
 };
 use zercle_rust_template::domain::repositories::{TaskRepository, UserRepository};
 use zercle_rust_template::domain::usecases::{
-    TaskUsecase, TaskUsecaseError, TaskUsecaseImpl, UserUsecase, UserUsecaseImpl,
+    TaskUsecase, TaskUsecaseImpl, UserUsecase, UserUsecaseImpl,
 };
 
 // Mock user repository for testing
