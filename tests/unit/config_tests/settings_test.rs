@@ -13,6 +13,7 @@ fn clear_all_settings_env_vars() {
         "SERVER_HOST",
         "SERVER_PORT",
         "SERVER_ENV",
+        "DATABASE_URL",
         "DB_DRIVER",
         "DB_HOST",
         "DB_PORT",
@@ -61,7 +62,7 @@ mod settings_from_env_tests {
         std::env::set_var("JWT_SECRET", "test-jwt-secret-key");
         std::env::set_var("RATE_LIMIT_REQUESTS_PER_MINUTE", "200");
 
-        let settings = Settings::from_env();
+        let settings = Settings::from_env_test();
 
         assert!(settings.is_ok(), "Settings should load from environment");
         let settings = settings.unwrap();
@@ -87,7 +88,7 @@ mod settings_from_env_tests {
         // Ensure env vars are cleared - this is critical for the test
         clear_all_settings_env_vars();
 
-        let settings = Settings::from_env();
+        let settings = Settings::from_env_test();
 
         assert!(settings.is_ok());
         let settings = settings.unwrap();
@@ -114,7 +115,7 @@ mod settings_from_env_tests {
         clear_all_settings_env_vars();
         std::env::set_var("SERVER_PORT", "invalid");
 
-        let settings = Settings::from_env();
+        let settings = Settings::from_env_test();
 
         assert!(settings.is_err(), "Settings should fail with invalid port");
 
@@ -127,7 +128,7 @@ mod settings_from_env_tests {
         clear_all_settings_env_vars();
         std::env::set_var("RATE_LIMIT_REQUESTS_PER_MINUTE", "not-a-number");
 
-        let settings = Settings::from_env();
+        let settings = Settings::from_env_test();
 
         assert!(
             settings.is_err(),
@@ -580,7 +581,7 @@ argon2id:
         std::env::set_var("SERVER__PORT", "9999");
         std::env::set_var("JWT__SECRET", "env-override-secret");
 
-        let settings = Settings::from_file_with_env(&config_path);
+        let settings = Settings::from_file_with_env_test(&config_path);
 
         assert!(settings.is_ok());
         let settings = settings.unwrap();
@@ -606,13 +607,21 @@ mod settings_cors_tests {
     /// Test CORS allowed origins parsing from comma-separated string
     #[test]
     fn test_cors_allowed_origins_parsing() {
+        struct Cleanup;
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                clear_all_settings_env_vars();
+            }
+        }
+        let _cleanup = Cleanup;
+
         clear_all_settings_env_vars();
         std::env::set_var(
             "CORS_ALLOWED_ORIGINS",
             "http://localhost:3000,http://localhost:8080,https://example.com",
         );
 
-        let settings = Settings::from_env().unwrap();
+        let settings = Settings::from_env_test().unwrap();
 
         assert_eq!(settings.cors.allowed_origins.len(), 3);
         assert!(settings
@@ -627,34 +636,46 @@ mod settings_cors_tests {
             .cors
             .allowed_origins
             .contains(&"https://example.com".to_string()));
-
-        clear_all_settings_env_vars();
     }
 
     /// Test CORS with single origin
     #[test]
     fn test_cors_single_origin() {
+        struct Cleanup;
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                clear_all_settings_env_vars();
+            }
+        }
+        let _cleanup = Cleanup;
+
         clear_all_settings_env_vars();
         std::env::set_var("CORS_ALLOWED_ORIGINS", "https://api.example.com");
 
-        let settings = Settings::from_env().unwrap();
+        let settings = Settings::from_env_test().unwrap();
 
         assert_eq!(settings.cors.allowed_origins.len(), 1);
         assert_eq!(settings.cors.allowed_origins[0], "https://api.example.com");
-
-        clear_all_settings_env_vars();
     }
 
     /// Test CORS with whitespace in origins
     #[test]
     fn test_cors_origins_with_whitespace() {
+        struct Cleanup;
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                clear_all_settings_env_vars();
+            }
+        }
+        let _cleanup = Cleanup;
+
         clear_all_settings_env_vars();
         std::env::set_var(
             "CORS_ALLOWED_ORIGINS",
             " http://localhost:3000 , http://localhost:8080 ",
         );
 
-        let settings = Settings::from_env().unwrap();
+        let settings = Settings::from_env_test().unwrap();
 
         assert_eq!(settings.cors.allowed_origins.len(), 2);
         assert!(settings
@@ -665,8 +686,6 @@ mod settings_cors_tests {
             .cors
             .allowed_origins
             .contains(&"http://localhost:8080".to_string()));
-
-        clear_all_settings_env_vars();
     }
 }
 
@@ -727,7 +746,7 @@ mod settings_argon2id_tests {
     fn test_argon2id_default_values() {
         clear_all_settings_env_vars();
 
-        let settings = Settings::from_env().unwrap();
+        let settings = Settings::from_env_test().unwrap();
 
         // Default values from Settings::from_env()
         assert_eq!(settings.argon2id.memory_kb, 19456);

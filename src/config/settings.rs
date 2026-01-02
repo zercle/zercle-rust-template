@@ -61,8 +61,21 @@ pub struct Argon2idConfig {
 }
 
 impl Settings {
+    /// Load settings from environment, with dotenv support (for production/development)
     pub fn from_env() -> anyhow::Result<Self> {
-        dotenv::dotenv().ok();
+        let _ = dotenv::dotenv().ok();
+
+        Self::from_env_parsed()
+    }
+
+    /// Load settings from environment without dotenv (for testing)
+    /// This function does NOT load from .env files, only uses raw environment variables
+    pub fn from_env_test() -> anyhow::Result<Self> {
+        Self::from_env_parsed()
+    }
+
+    /// Internal function to parse settings from environment variables
+    fn from_env_parsed() -> anyhow::Result<Self> {
 
         Ok(Settings {
             server: ServerConfig {
@@ -134,8 +147,19 @@ impl Settings {
     }
 
     pub fn from_file_with_env<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        dotenv::dotenv().ok();
+        let _ = dotenv::dotenv().ok();
 
+        let config = config::Config::builder()
+            .add_source(config::File::from(path.as_ref()))
+            .add_source(config::Environment::default().separator("__"))
+            .build()?;
+
+        let settings: Settings = config.try_deserialize()?;
+        Ok(settings)
+    }
+
+    /// Load settings from file without dotenv (for testing)
+    pub fn from_file_with_env_test<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let config = config::Config::builder()
             .add_source(config::File::from(path.as_ref()))
             .add_source(config::Environment::default().separator("__"))

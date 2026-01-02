@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// use zercle_rust_template::app::App;
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<()> {
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let app = App::new().await?;
 ///     app.run_server().await
 /// }
