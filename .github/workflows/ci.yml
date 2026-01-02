@@ -156,9 +156,9 @@ jobs:
 
       - name: Run database migrations
         run: |
-          cargo sqlx database drop --database-url $DATABASE_URL || true
+          cargo sqlx database drop --database-url $DATABASE_URL --yes || true
           cargo sqlx database create --database-url $DATABASE_URL
-          cargo sqlx migrate run --database-url $DATABASE_URL
+          cargo sqlx migrate run --database-url $DATABASE_URL --source-dir sqlc/migrations
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
