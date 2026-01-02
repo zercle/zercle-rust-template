@@ -42,7 +42,7 @@ concurrency:
 
 env:
   # Rust toolchain version (from rust-toolchain.toml)
-  RUST_VERSION: "1.75.0"
+  RUST_VERSION: "1.85.0"
   
   # Database configuration
   POSTGRES_USER: test_user
@@ -64,7 +64,7 @@ jobs:
     
     # Use the Rust toolchain specified in rust-toolchain.toml
     container:
-      image: rust:1.75.0-alpine
+      image: rust:1.85.0-alpine
     
     steps:
       - name: Checkout code
@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     
     container:
-      image: rust:1.75.0-alpine
+      image: rust:1.85.0-alpine
     
     steps:
       - name: Checkout code
@@ -162,15 +162,11 @@ jobs:
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
         ports:
           - 5432:5432
-        options: >
-          --health-cmd "pg_isready -U test_user -d test_db"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-          --health-start-period 10s
+        options: >-
+          --health-cmd "pg_isready -U test_user -d test_db" --health-interval 10s --health-timeout 5s --health-retries 5 --health-start-period 10s
     
     container:
-      image: rust:1.75.0-alpine
+      image: rust:1.85.0-alpine
       env:
         DATABASE_URL: ${{ env.DATABASE_URL }}
     
@@ -257,7 +253,7 @@ jobs:
     runs-on: ubuntu-latest
     
     container:
-      image: rust:1.75.0-alpine
+      image: rust:1.85.0-alpine
     
     steps:
       - name: Checkout code
@@ -315,7 +311,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     container:
-      image: rust:1.75.0-alpine
+      image: rust:1.85.0-alpine
     
     steps:
       - name: Checkout code
@@ -346,7 +342,7 @@ jobs:
     runs-on: ubuntu-latest
     
     container:
-      image: rust:1.75.0-alpine
+      image: rust:1.85.0-alpine
     
     services:
       # PostgreSQL database service for tests that need it
@@ -358,12 +354,8 @@ jobs:
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
         ports:
           - 5432:5432
-        options: >
-          --health-cmd "pg_isready -U test_user -d test_db"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-          --health-start-period 10s
+        options: >-
+          --health-cmd "pg_isready -U test_user -d test_db" --health-interval 10s --health-timeout 5s --health-retries 5 --health-start-period 10s
     
     steps:
       - name: Checkout code
