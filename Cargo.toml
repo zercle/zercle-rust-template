@@ -62,7 +62,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Authentication and Security
 argon2 = "0.5"
-jsonwebtoken = { version = "9", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = "9"
 
 # Validation
 validator = { version = "0.20", features = ["derive"] }
