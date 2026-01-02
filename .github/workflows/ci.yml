@@ -90,17 +90,14 @@ jobs:
       
       - name: Check code formatting
         run: cargo fmt -- --check
-        working-directory: /github/workspace
       
       - name: Run Clippy linter
         run: |
           cargo clippy --all-targets --all-features -- -D warnings -A clippy::dbg_macro
-        working-directory: /github/workspace
       
       - name: Run Clippy on tests
         run: |
           cargo clippy --all-targets --all-features --tests -- -D warnings -A clippy::dbg_macro
-        working-directory: /github/workspace
 
   # ===========================================================================
   # Unit Tests Job
@@ -135,12 +132,10 @@ jobs:
       
       - name: Run unit tests
         run: cargo test --lib -- --test-threads=4
-        working-directory: /github/workspace
       
       - name: Run unit test binaries
         run: |
           cargo test --bins -- --test-threads=4
-        working-directory: /github/workspace
       
       - name: Upload test results
         if: always()
@@ -171,7 +166,7 @@ jobs:
           --health-cmd "pg_isready -U test_user -d test_db"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 5
           --health-start-period 10s
     
     container:
@@ -193,7 +188,6 @@ jobs:
           cargo install sqlx-cli --no-default-features --features postgres
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        working-directory: /github/workspace
       
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
@@ -220,7 +214,6 @@ jobs:
           done
           echo "PostgreSQL did not become ready in time"
           exit 1
-        working-directory: /github/workspace
       
       - name: Run database migrations
         run: |
@@ -229,28 +222,24 @@ jobs:
           cargo sqlx migrate run --database-url $DATABASE_URL
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        working-directory: /github/workspace
       
       - name: Run integration tests
         run: |
           cargo test --test integration -- --test-threads=4
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        working-directory: /github/workspace
       
       - name: Run handler tests
         run: |
           cargo test --test handler_test -- --test-threads=4
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        working-directory: /github/workspace
       
       - name: Run middleware tests
         run: |
           cargo test --test middleware_test -- --test-threads=4
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        working-directory: /github/workspace
       
       - name: Upload integration test results
         if: always()
@@ -290,11 +279,9 @@ jobs:
       
       - name: Build in debug mode
         run: cargo build
-        working-directory: /github/workspace
       
       - name: Build in release mode
         run: cargo build --release
-        working-directory: /github/workspace
       
       - name: Verify release binary exists
         run: |
@@ -339,21 +326,17 @@ jobs:
       - name: Install cargo-audit
         run: |
           cargo install cargo-audit
-        working-directory: /github/workspace
       
       - name: Install cargo-outdated
         run: |
           cargo install cargo-outdated
-        working-directory: /github/workspace
       
       - name: Run cargo-audit for vulnerabilities
         run: cargo audit --deny warnings
-        working-directory: /github/workspace
       
       - name: Check for outdated dependencies
         run: |
           cargo outdated --root-deps-only --exit-code 1 || true
-        working-directory: /github/workspace
 
   # ===========================================================================
   # Coverage Report Job (Optional)
@@ -379,7 +362,8 @@ jobs:
           --health-cmd "pg_isready -U test_user -d test_db"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 5
+          --health-start-period 10s
     
     steps:
       - name: Checkout code
@@ -390,7 +374,6 @@ jobs:
       - name: Install tarpaulin for coverage
         run: |
           cargo install cargo-tarpaulin
-        working-directory: /github/workspace
       
       - name: Wait for PostgreSQL to be ready
         run: |
@@ -407,7 +390,6 @@ jobs:
           cargo tarpaulin --out Html --out Xml -- --test-threads=4
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
-        working-directory: /github/workspace
       
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -417,6 +399,9 @@ jobs:
             tarpaulin-report.html
             cobertura-coverage.xml
           retention-days: 7
+      
+      - name: Install git and gpg for codecov
+        run: apk add --no-cache git gnupg
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
