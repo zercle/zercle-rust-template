@@ -231,7 +231,7 @@ mod task_tests {
         // Create a task
         let response = client
             .post(format!("{}/api/v1/tasks", base_url))
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .json(&serde_json::json!({
                 "title": "Test Task",
                 "description": "Test Description",
@@ -248,7 +248,7 @@ mod task_tests {
         // Get the task
         let response = client
             .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
             .unwrap();
@@ -261,7 +261,7 @@ mod task_tests {
         // Update the task
         let response = client
             .put(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .json(&serde_json::json!({
                 "title": "Updated Task",
                 "status": "completed"
@@ -278,7 +278,7 @@ mod task_tests {
         // List tasks
         let response = client
             .get(format!("{}/api/v1/tasks", base_url))
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
             .unwrap();
@@ -290,7 +290,7 @@ mod task_tests {
         // Delete the task
         let response = client
             .delete(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
             .unwrap();
@@ -300,7 +300,7 @@ mod task_tests {
         // Verify task is deleted
         let response = client
             .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
             .unwrap();
@@ -390,7 +390,7 @@ mod task_tests {
         // User 1 creates a task
         let response = client
             .post(format!("{}/api/v1/tasks", base_url))
-            .header("Authorization", format!("Bearer {}", token1))
+            .header("Authorization", format!("Bearer {token1}"))
             .json(&serde_json::json!({
                 "title": "User 1's Task"
             }))
@@ -405,7 +405,7 @@ mod task_tests {
         // User 2 tries to access User 1's task
         let response = client
             .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token2))
+            .header("Authorization", format!("Bearer {token2}"))
             .send()
             .await
             .unwrap();
@@ -415,7 +415,7 @@ mod task_tests {
         // User 2 tries to delete User 1's task
         let response = client
             .delete(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token2))
+            .header("Authorization", format!("Bearer {token2}"))
             .send()
             .await
             .unwrap();
@@ -425,7 +425,7 @@ mod task_tests {
         // User 1 can access their own task
         let response = client
             .get(format!("{}/api/v1/tasks/{}", base_url, task_id))
-            .header("Authorization", format!("Bearer {}", token1))
+            .header("Authorization", format!("Bearer {token1}"))
             .send()
             .await
             .unwrap();
