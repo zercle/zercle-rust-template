@@ -5,8 +5,7 @@
 use axum::http::StatusCode;
 use chrono::{Duration, Utc};
 use zercle_rust_template::domain::entities::{
-    CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus,
-    UpdateTaskRequest,
+    CreateTaskRequest, CreateUserRequest, LoginRequest, TaskPriority, TaskStatus, UpdateTaskRequest,
 };
 use zercle_rust_template::infrastructure::http::handlers::ApiResponse;
 
