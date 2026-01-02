@@ -1,9 +1,12 @@
 version: "3.8"
 
 services:
-  api:
-    build: .
-    container_name: zercle-api
+  # Rust API Service
+  rust-api:
+    build:
+      context: ../../.
+      dockerfile: deployments/docker/Dockerfile
+    container_name: zercle-rust-api
     ports:
       - "3000:3000"
     environment:
@@ -15,17 +18,26 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       DB_NAME: postgres
+      DB_POOL_SIZE: 10
       JWT_SECRET: your-super-secret-jwt-key-for-development-only-123
-      LOG_LEVEL: debug
+      LOG_LEVEL: info
+      LOG_FORMAT: json
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - zercle-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
+  # PostgreSQL Database
   postgres:
-    image: postgres:18-alpine
+    image: mirror.gcr.io/library/postgres:18-alpine
     container_name: zercle-postgres
     environment:
       TZ: Asia/Bangkok

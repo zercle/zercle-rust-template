@@ -1,276 +1,450 @@
-.PHONY: help init generate build test test-unit test-integration test-short test-all test-coverage-check lint fmt clean docker-build docker-up docker-down migrate-up migrate-down dev run build-health build-user build-post build-all build-custom test-db-up test-db-down test-db-reset test-db-shell install-tools test-coverage
+# =============================================================================
+# Zercle Rust Template - Makefile
+# =============================================================================
+# A comprehensive Makefile for Rust project development
+#
+# Usage:
+#   make <target>
+#   ENV=<env> make <target>  # Override environment (default: dev)
+#
+# Environments: dev, local, uat, prod
+# =============================================================================
 
+# -----------------------------------------------------------------------------
 # Variables
-GO := go
-GOFLAGS := -v
-GOPROXY := direct
-BINARY_NAME := service
-BINARY_DIR := ./bin
-BUILD_DIR := ./cmd/server
+# -----------------------------------------------------------------------------
 
-# Database configuration
-DB_HOST := localhost
-DB_PORT := 5432
-DB_NAME := postgres
-DB_USER := postgres
-DB_PASSWORD := postgres
-DB_SSL_MODE := disable
-DB_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSL_MODE)
+# Project metadata
+PROJECT_NAME := $(shell cat Cargo.toml | grep '^name' | head -1 | cut -d'"' -f2)
+PROJECT_VERSION := $(shell cat Cargo.toml | grep '^version' | head -1 | cut -d'"' -f2)
 
-# Migration paths
-MIGRATION_PATH := sqlc/migrations
+# Rust toolchain
+CARGO := cargo
+RUSTC := rustc
+RUSTFMT := rustfmt
+RUSTUP := rustup
 
-# Coverage thresholds
-COVERAGE_THRESHOLD_DEFAULT := 75
-COVERAGE_THRESHOLD_INTEGRATION := 45
-COVERAGE_THRESHOLD_MOCK := 40
-COVERAGE_THRESHOLD_INFRA := 65
+# Build flags
+DEBUG_BUILD_DIR := target/debug
+RELEASE_BUILD_DIR := target/release
 
-# Test configuration
-TEST_PARALLEL := 4
+# Environment configuration
+ENV ?= dev
+CONFIG_FILE := configs/$(ENV).yaml
 
-# Container Runtime (Podman with Docker compatibility)
-ifneq ($(shell command -v podman 2>/dev/null),)
-  CONTAINER_RUNTIME := podman
-  COMPOSE_CMD := podman-compose
-else ifneq ($(shell command -v docker 2>/dev/null),)
-  CONTAINER_RUNTIME := docker
-  COMPOSE_CMD := docker-compose
+# Colors for output (with fallbacks for terminals that don't support colors)
+ifeq ($(shell tput colors 2>/dev/null || echo 0),0)
+    NORMAL := 
+    BOLD := 
+    RED := 
+    GREEN := 
+    YELLOW := 
+    BLUE := 
 else
-  $(error "Neither podman nor docker found. Please install one of them.")
+    NORMAL := $(shell tput sgr0)
+    BOLD := $(shell tput bold)
+    RED := $(shell tput setaf 1)
+    GREEN := $(shell tput setaf 2)
+    YELLOW := $(shell tput setaf 3)
+    BLUE := $(shell tput setaf 4)
 endif
 
+# Default environment variables for different targets
+DEV_ENV_VARS := DATABASE_URL=postgres://postgres:postgres@localhost:5432/zercle_dev
+LOCAL_ENV_VARS := DATABASE_URL=postgres://postgres:postgres@localhost:5432/zercle_local
+UAT_ENV_VARS := DATABASE_URL=postgres://postgres:postgres@localhost:5432/zercle_uat
+PROD_ENV_VARS := DATABASE_URL=postgres://postgres:postgres@localhost:5432/zercle_prod
+
 # Docker compose files
-COMPOSE_FILE := docker-compose.yml
-COMPOSE_TEST_FILE := docker-compose.test.yml
+DOCKER_COMPOSE_FILE := deployments/docker/docker-compose.yml
+DOCKER_COMPOSE_TEST_FILE := deployments/docker/docker-compose.test.yml
 
-# Build tags
-BUILDTAGS_HEALTH := -tags=health
-BUILDTAGS_USER := -tags=user
-BUILDTAGS_POST := -tags=post
-BUILDTAGS_ALL := -tags=all
+# sqlc configuration
+SQLC := sqlc
+SQLC_CONFIG := sqlc.yaml
 
-# Help target
-help:
-	@echo "Available targets:"
-	@echo ""
-	@echo "Project Setup:"
-	@echo "  init              - Initialize project dependencies"
-	@echo "  install-tools    - Install development tools"
-	@echo "  generate          - Generate sqlc code and mocks"
-	@echo ""
-	@echo "Build:"
-	@echo "  build             - Build application (includes all handlers)"
-	@echo "  build-health      - Build with health handler only"
-	@echo "  build-user        - Build with user handler only"
-	@echo "  build-post        - Build with post handler only"
-	@echo "  build-all         - Build with all handlers explicitly"
-	@echo "  build-custom      - Build with custom tags (use TAGS='tag1,tag2')"
-	@echo "  dev               - Run in development mode"
-	@echo "  run               - Run the compiled binary"
-	@echo "  clean             - Clean build artifacts"
-	@echo ""
-	@echo "Testing:"
-	@echo "  test-unit         - Run unit tests only (fast, no DB)"
-	@echo "  test-integration  - Run integration tests (uses testcontainers)"
-	@echo "  test-short        - Run fast tests only (-short flag)"
-	@echo "  test-all          - Run all tests with coverage"
-	@echo "  test-coverage     - Run tests with coverage (single file)"
-	@echo "  test-coverage-check - Run tests and enforce 75% coverage threshold"
-	@echo ""
-	@echo "Code Quality:"
-	@echo "  lint              - Run golangci-lint"
-	@echo "  fmt               - Format code with gofmt"
-	@echo ""
-	@echo "Docker:"
-	@echo "  docker-build      - Build Docker image"
-	@echo "  docker-up         - Start Docker containers (PostgreSQL 18)"
-	@echo "  docker-down       - Stop Docker containers"
-	@echo ""
-	@echo "Migrations:"
-	@echo "  migrate-up        - Run database migrations"
-	@echo "  migrate-down      - Rollback database migrations"
-	@echo ""
-	@echo "Note: Integration tests use testcontainers-go with automatic Podman/Docker detection"
+# -----------------------------------------------------------------------------
+# Phony targets (always run)
+# -----------------------------------------------------------------------------
+.PHONY: all build build-release rebuild \
+    run run-dev run-local run-uat run-prod \
+    test test-unit test-integration test-coverage \
+    db-migrate db-seed db-reset \
+    fmt fmt-check clippy lint audit \
+    docker-build docker-up docker-down docker-test \
+    clean clean-all \
+    watch setup help
 
-# Initialize project
-init:
-	@echo "Initializing project..."
-	$(GO) mod tidy
-	$(GO) mod download
+# -----------------------------------------------------------------------------
+# Build Targets
+# -----------------------------------------------------------------------------
 
-# Install tools
-install-tools:
-	@echo "Installing development tools..."
-	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-	$(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-	$(GO) install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-	$(GO) install github.com/swaggo/swag/cmd/swag@latest
+# Build the project in debug mode
+build:
+	@echo "$(BLUE)[BUILD]$(NORMAL) Building $(PROJECT_NAME) v$(PROJECT_VERSION) in debug mode..."
+	$(CARGO) build
 
-# Build the application (default - includes all handlers)
-build: clean
-	@echo "Building application..."
-	@mkdir -p $(BINARY_DIR)
-	$(GO) build $(GOFLAGS) -o $(BINARY_DIR)/$(BINARY_NAME) $(BUILD_DIR)
+# Build the project in release mode
+build-release:
+	@echo "$(BLUE)[BUILD]$(NORMAL) Building $(PROJECT_NAME) v$(PROJECT_VERSION) in release mode..."
+	$(CARGO) build --release
+	@echo "$(GREEN)[BUILD]$(NORMAL) Release binary available at: $(RELEASE_BUILD_DIR)/$(PROJECT_NAME)"
 
-# Generic build function with tags
-define BUILD_WITH_TAGS
-	@echo "Building with $(2)..."
-	@mkdir -p $(BINARY_DIR)
-	$(GO) build $(GOFLAGS) $(1) -o $(BINARY_DIR)/$(BINARY_NAME) $(BUILD_DIR)
-	@echo "Binary built: $(BINARY_DIR)/$(BINARY_NAME)"
-endef
+# Clean and rebuild
+rebuild: clean build
 
-# Build with specific tags
-build-health: clean
-	$(call BUILD_WITH_TAGS,$(BUILDTAGS_HEALTH),health handler)
+# -----------------------------------------------------------------------------
+# Run Targets
+# -----------------------------------------------------------------------------
 
-build-user: clean
-	$(call BUILD_WITH_TAGS,$(BUILDTAGS_USER),user handler)
+# Run the application (uses ENV variable, default: dev)
+run: run-$(ENV)
 
-build-post: clean
-	$(call BUILD_WITH_TAGS,$(BUILDTAGS_POST),post handler)
+# Run with dev environment
+run-dev:
+	@echo "$(BLUE)[RUN]$(NORMAL) Starting $(PROJECT_NAME) in dev mode..."
+	@if [ ! -f $(CONFIG_FILE) ]; then \
+		echo "$(RED)[ERROR]$(NORMAL) Config file not found: $(CONFIG_FILE)"; \
+		echo "$(YELLOW)[INFO]$(NORMAL) Copy .env.example to .env and configure it"; \
+		exit 1; \
+	fi
+	$(DEV_ENV_VARS) $(CARGO) run
 
-build-all: clean
-	$(call BUILD_WITH_TAGS,$(BUILDTAGS_ALL),all handlers)
+# Run with local environment
+run-local:
+	@echo "$(BLUE)[RUN]$(NORMAL) Starting $(PROJECT_NAME) in local mode..."
+	@if [ ! -f $(CONFIG_FILE) ]; then \
+		echo "$(RED)[ERROR]$(NORMAL) Config file not found: $(CONFIG_FILE)"; \
+		exit 1; \
+	fi
+	$(LOCAL_ENV_VARS) $(CARGO) run
 
-build-custom:
-	$(call BUILD_WITH_TAGS,-tags="$(TAGS)",custom tags: $(TAGS))
+# Run with UAT environment
+run-uat:
+	@echo "$(BLUE)[RUN]$(NORMAL) Starting $(PROJECT_NAME) in UAT mode..."
+	@if [ ! -f $(CONFIG_FILE) ]; then \
+		echo "$(RED)[ERROR]$(NORMAL) Config file not found: $(CONFIG_FILE)"; \
+		exit 1; \
+	fi
+	$(UAT_ENV_VARS) $(CARGO) run
 
-# Run the application
-run:
-	@echo "Running application..."
-	./$(BINARY_DIR)/$(BINARY_NAME)
+# Run with prod environment
+run-prod:
+	@echo "$(RED)[RUN]$(NORMAL) Starting $(PROJECT_NAME) in PROD mode..."
+	@if [ ! -f $(CONFIG_FILE) ]; then \
+		echo "$(RED)[ERROR]$(NORMAL) Config file not found: $(CONFIG_FILE)"; \
+		exit 1; \
+	fi
+	$(PROD_ENV_VARS) $(CARGO) run --release
 
-# Development mode
-dev:
-	@echo "Running in development mode..."
-	$(GO) run $(BUILD_DIR)
+# -----------------------------------------------------------------------------
+# Test Targets
+# -----------------------------------------------------------------------------
 
-# Generate sqlc code and mocks
-generate:
-	@echo "Generating sqlc code..."
-	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate
-	@echo "Generating swagger docs..."
-	swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
-	@echo "Generating mocks..."
-	$(GO) generate ./...
+# Run all tests
+test:
+	@echo "$(BLUE)[TEST]$(NORMAL) Running all tests..."
+	$(CARGO) test
 
-# Run linter
-lint:
-	@echo "Running golangci-lint..."
-	GOPROXY=$(GOPROXY) golangci-lint run ./...
+# Run unit tests only
+test-unit:
+	@echo "$(BLUE)[TEST]$(NORMAL) Running unit tests..."
+	$(CARGO) test --lib
 
-# Format code
+# Run integration tests only
+test-integration:
+	@echo "$(BLUE)[TEST]$(NORMAL) Running integration tests..."
+	$(CARGO) test --tests integration
+
+# Run tests with coverage
+test-coverage:
+	@echo "$(BLUE)[TEST]$(NORMAL) Running tests with coverage..."
+	@if ! command -v tarpaulin &> /dev/null; then \
+		echo "$(YELLOW)[INFO]$(NORMAL) Installing cargo-tarpaulin..."; \
+		$(CARGO) install cargo-tarpaulin; \
+	fi
+	$(CARGO) tarpaulin --out Html
+
+# -----------------------------------------------------------------------------
+# Database Targets
+# -----------------------------------------------------------------------------
+
+# Run database migrations
+db-migrate:
+	@echo "$(BLUE)[DB]$(NORMAL) Running database migrations..."
+	@if [ ! -f $(SQLC_CONFIG) ]; then \
+		echo "$(RED)[ERROR]$(NORMAL) sqlc config not found: $(SQLC_CONFIG)"; \
+		exit 1; \
+	fi
+	$(CARGO) run --bin sqlx-cli -- migrate run
+
+# Seed database with test data
+db-seed:
+	@echo "$(BLUE)[DB]$(NORMAL) Seeding database..."
+	@if [ -f scripts/seed-db.sh ]; then \
+		bash scripts/seed-db.sh; \
+	else \
+		echo "$(YELLOW)[WARN]$(NORMAL) Seed script not found: scripts/seed-db.sh"; \
+	fi
+
+# Reset database (migrate + seed)
+db-reset:
+	@echo "$(BLUE)[DB]$(NORMAL) Resetting database..."
+	$(CARGO) run --bin sqlx-cli -- migrate drop -y
+	$(CARGO) run --bin sqlx-cli -- migrate run
+	@echo "$(BLUE)[DB]$(NORMAL) Database reset complete. Seeding data..."
+	@if [ -f scripts/seed-db.sh ]; then \
+		bash scripts/seed-db.sh; \
+	fi
+
+# Generate sqlc code
+db-generate:
+	@echo "$(BLUE)[DB]$(NORMAL) Generating sqlc code..."
+	$(SQLC) generate
+
+# -----------------------------------------------------------------------------
+# Code Quality Targets
+# -----------------------------------------------------------------------------
+
+# Format code with rustfmt
 fmt:
-	@echo "Formatting code..."
-	$(GO) fmt ./...
-	gofmt -s -w .
+	@echo "$(BLUE)[FMT]$(NORMAL) Formatting code..."
+	$(CARGO) fmt
+
+# Check code formatting
+fmt-check:
+	@echo "$(BLUE)[FMT]$(NORMAL) Checking code formatting..."
+	$(CARGO) fmt -- --check
+
+# Run clippy linter
+clippy:
+	@echo "$(BLUE)[CLIPPY]$(NORMAL) Running clippy linter..."
+	$(CARGO) clippy
+
+# Run all linters (fmt-check + clippy)
+lint: fmt-check clippy
+
+# Run cargo audit for security vulnerabilities
+audit:
+	@echo "$(BLUE)[AUDIT]$(NORMAL) Checking for security vulnerabilities..."
+	@if ! command -v cargo-audit &> /dev/null; then \
+		echo "$(YELLOW)[INFO]$(NORMAL) Installing cargo-audit..."; \
+		$(CARGO) install cargo-audit; \
+	fi
+	cargo-audit audit
+
+# Check for outdated dependencies
+outdated:
+	@echo "$(BLUE)[OUTDATED]$(NORMAL) Checking for outdated dependencies..."
+	@if ! command -v cargo-outdated &> /dev/null; then \
+		echo "$(YELLOW)[INFO]$(NORMAL) Installing cargo-outdated..."; \
+		$(CARGO) install cargo-outdated; \
+	fi
+	cargo-outdated
+
+# -----------------------------------------------------------------------------
+# Docker Targets
+# -----------------------------------------------------------------------------
+
+# Build Docker image
+docker-build:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Building Docker image..."
+	docker build -t $(PROJECT_NAME):latest -f deployments/docker/Dockerfile .
+
+# Start Docker containers
+docker-up:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Starting Docker containers..."
+	docker-compose -f $(DOCKER_COMPOSE_FILE) up -d
+
+# Stop Docker containers
+docker-down:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Stopping Docker containers..."
+	docker-compose -f $(DOCKER_COMPOSE_FILE) down
+
+# View Docker logs
+docker-logs:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Showing Docker logs..."
+	docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f
+
+# Run tests in Docker
+docker-test:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Running tests in Docker..."
+	docker-compose -f $(DOCKER_COMPOSE_TEST_FILE) up --build --abort-on-container-exit
+
+# Build and push Docker image (for CI/CD)
+docker-publish:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Building and publishing Docker image..."
+	@read -p "Enter Docker registry URL (e.g., ghcr.io/username): " REGISTRY; \
+	read -p "Enter image tag (default: latest): " TAG; \
+	[ -z "$$TAG" ] && TAG="latest"; \
+	docker build -t $$REGISTRY/$(PROJECT_NAME):$$TAG -f deployments/docker/Dockerfile .; \
+	docker push $$REGISTRY/$(PROJECT_NAME):$$TAG; \
+	echo "$(GREEN)[DOCKER]$(NORMAL) Image published: $$REGISTRY/$(PROJECT_NAME):$$TAG"
+
+# -----------------------------------------------------------------------------
+# Clean Targets
+# -----------------------------------------------------------------------------
 
 # Clean build artifacts
 clean:
-	@echo "Cleaning..."
-	$(GO) clean
-	rm -rf $(BINARY_DIR)
-	rm -f coverage.out coverage.html coverage_unit.out coverage_integration.out
+	@echo "$(BLUE)[CLEAN]$(NORMAL) Cleaning build artifacts..."
+	$(CARGO) clean
+	@echo "$(GREEN)[CLEAN]$(NORMAL) Build artifacts cleaned"
 
-# Build container image
-docker-build:
-	@echo "Building container image using $(CONTAINER_RUNTIME)..."
-	$(CONTAINER_RUNTIME) build -t zercle-go-template:latest .
+# Clean everything including Docker
+clean-all: clean
+	@echo "$(BLUE)[CLEAN]$(NORMAL) Cleaning Docker containers and volumes..."
+	-docker-compose -f $(DOCKER_COMPOSE_FILE) down -v 2>/dev/null || true
+	@echo "$(GREEN)[CLEAN]$(NORMAL) All cleaned"
 
-# Start containers with compose
-docker-up:
-	@echo "Starting containers using $(CONTAINER_RUNTIME)..."
-	$(COMPOSE_CMD) -f $(COMPOSE_FILE) up -d
+# Clean cargo cache
+clean-cache:
+	@echo "$(BLUE)[CLEAN]$(NORMAL) Cleaning cargo cache..."
+	rm -rf ~/.cargo/registry/index/*
+	rm -rf ~/.cargo/registry/cache/*
+	rm -rf ~/.cargo/git/db/*
+	@echo "$(GREEN)[CLEAN]$(NORMAL) Cargo cache cleaned"
 
-# Stop containers
-docker-down:
-	@echo "Stopping containers using $(CONTAINER_RUNTIME)..."
-	$(COMPOSE_CMD) -f $(COMPOSE_FILE) down
+# -----------------------------------------------------------------------------
+# Development Helpers
+# -----------------------------------------------------------------------------
 
-# Run database migrations
-migrate-up:
-	@echo "Running migrations..."
-	migrate -path $(MIGRATION_PATH) -database "$(DB_URL)" up
+# Watch for changes and rebuild
+watch:
+	@echo "$(BLUE)[WATCH]$(NORMAL) Watching for changes..."
+	@if ! command -v cargo-watch &> /dev/null; then \
+		echo "$(YELLOW)[INFO]$(NORMAL) Installing cargo-watch..."; \
+		$(CARGO) install cargo-watch; \
+	fi
+	cargo watch -x run
 
-# Rollback database migrations
-migrate-down:
-	@echo "Rolling back migrations..."
-	migrate -path $(MIGRATION_PATH) -database "$(DB_URL)" down
+# Watch and run tests
+watch-test:
+	@echo "$(BLUE)[WATCH]$(NORMAL) Watching for changes and running tests..."
+	@if ! command -v cargo-watch &> /dev/null; then \
+		$(CARGO) install cargo-watch; \
+	fi
+	cargo watch -x test
 
-# ============================================
-# Testing Targets
-# ============================================
-test-unit:
-	@echo "🧪 Running unit tests..."
-	$(GO) test -v -race -short -count=1 ./internal/domain/... ./pkg/... ./internal/infrastructure/...
-	@echo "✅ Unit tests complete"
+# Initial project setup
+setup:
+	@echo "$(BLUE)[SETUP]$(NORMAL) Setting up project..."
+	@if [ ! -f .env ]; then \
+		echo "$(YELLOW)[INFO]$(NORMAL) Creating .env from .env.example..."; \
+		cp .env.example .env; \
+		echo "$(GREEN)[SETUP]$(NORMAL) Please configure .env with your settings"; \
+	else \
+		echo "$(YELLOW)[INFO]$(NORMAL) .env already exists"; \
+	fi
+	@echo "$(BLUE)[SETUP]$(NORMAL) Installing dependencies..."
+	$(CARGO) fetch
+	@echo "$(BLUE)[SETUP]$(NORMAL) Verifying sqlc configuration..."
+	@if [ -f $(SQLC_CONFIG) ]; then \
+		$(SQLC) version; \
+	fi
+	@echo "$(GREEN)[SETUP]$(NORMAL) Project setup complete!"
 
-test-integration:
-	@echo "🧪 Running integration tests with testcontainers..."
-	@echo "Note: testcontainers will automatically use Podman if available"
-	$(GO) test -v -race -count=1 ./test/integration/...
-	@echo "✅ Integration tests complete"
+# Generate documentation
+doc:
+	@echo "$(BLUE)[DOC]$(NORMAL) Generating documentation..."
+	$(CARGO) doc --no-deps
+	@echo "$(GREEN)[DOC]$(NORMAL) Documentation generated in target/doc/"
 
-test-short:
-	@echo "⚡ Running fast tests only..."
-	$(GO) test -v -race -short -count=1 ./...
-	@echo "✅ Fast tests complete"
+# Open documentation in browser
+doc-open:
+	@echo "$(BLUE)[DOC]$(NORMAL) Opening documentation..."
+	@if command -v open &> /dev/null; then \
+		open target/doc/$(PROJECT_NAME)/index.html; \
+	elif command -v xdg-open &> /dev/null; then \
+		xdg-open target/doc/$(PROJECT_NAME)/index.html; \
+	else \
+		echo "$(YELLOW)[INFO]$(NORMAL) Documentation generated at target/doc/$(PROJECT_NAME)/index.html"; \
+	fi
 
-# Run tests with coverage (single file)
-test-coverage:
-	@echo "🧪 Running tests with coverage..."
-	$(GO) test -v -race -coverprofile=coverage.out -covermode=atomic ./...
-	$(GO) tool cover -html=coverage.out -o coverage.html
-	@echo "📊 Coverage report: coverage.html"
+# Open shell in Docker container
+docker-shell:
+	@echo "$(BLUE)[DOCKER]$(NORMAL) Opening shell in application container..."
+	docker-compose -f $(DOCKER_COMPOSE_FILE) exec app sh
 
-# Run all tests with separate coverage profiles
-test-all:
-	@echo "🧪 Running all tests with coverage..."
-	@echo "Running unit tests..."
-	$(GO) test -v -race -coverprofile=coverage_unit.out -covermode=atomic -parallel $(TEST_PARALLEL) $$(go list ./... | grep -v '^\.$$' | grep -vE '/test/integration$$')
-	@echo "Running integration tests..."
-	$(GO) test -v -race -coverprofile=coverage_integration.out -covermode=atomic -parallel $(TEST_PARALLEL) github.com/zercle/zercle-go-template/test/integration
-	@echo "Merging coverage profiles..."
-	@echo "mode: atomic" > coverage.out
-	@tail -q -n +2 coverage_unit.out coverage_integration.out 2>/dev/null >> coverage.out || true
-	$(GO) tool cover -html=coverage.out -o coverage.html
-	@echo "📊 Coverage report: coverage.html"
-
-# Check coverage threshold per package
-test-coverage-check: test-all
-	@echo "📊 Checking coverage threshold..."
+# Check project dependencies
+deps:
+	@echo "$(BLUE)[DEPS]$(NORMAL) Checking project dependencies..."
+	$(CARGO) tree -e no-dev
 	@echo ""
-	@FAILED=0; \
-	for pkg in $$(go list ./... | grep -v -E '/(docs|mock)$$' | grep -v '^$$'); do \
-		if [ ! -d "$$pkg" ] || ! ls "$$pkg"/*_test.go 1>/dev/null 2>&1; then \
-			continue; \
-		fi; \
-		result=$$(go test -covermode=atomic $$pkg 2>&1 | head -5); \
-		coverage=$$(echo "$$result" | grep -E 'coverage:' | grep -oE '[0-9]+\.[0-9]+' | head -1); \
-		if [ -z "$$coverage" ]; then \
-			continue; \
-		fi; \
-		threshold=$(COVERAGE_THRESHOLD_DEFAULT); \
-		echo "$$pkg" | grep -qE '/test/integration$$' && threshold=$(COVERAGE_THRESHOLD_INTEGRATION); \
-		echo "$$pkg" | grep -qE '/test/mock$$' && threshold=$(COVERAGE_THRESHOLD_MOCK); \
-		echo "$$pkg" | grep -qE '/(infrastructure/db|cmd/server)$$' && threshold=$(COVERAGE_THRESHOLD_INFRA); \
-		if [ "$$(echo "$$coverage < $$threshold" | bc -l 2>/dev/null || echo 0)" -eq 1 ]; then \
-			echo "❌ $$pkg: $$coverage% (below $$threshold%)"; \
-			FAILED=1; \
-		else \
-			echo "✅ $$pkg: $$coverage%"; \
-		fi; \
-	done; \
-	echo ""; \
-	if [ "$$FAILED" -eq 1 ]; then \
-		echo "❌ Some packages are below coverage threshold"; \
-		exit 1; \
-	fi; \
-	echo "✅ All packages with tests meet coverage threshold"
+	$(CARGO) update --dry-run
 
-# Legacy test target
-test: test-all
+# -----------------------------------------------------------------------------
+# Help Target
+# -----------------------------------------------------------------------------
 
-.DEFAULT_GOAL := help
+# Display available targets
+help:
+	@echo ""
+	@echo "$(BOLD)================================================================================$(NORMAL)"
+	@echo "$(BOLD)  $(PROJECT_NAME) v$(PROJECT_VERSION) - Makefile Help$(NORMAL)"
+	@echo "$(BOLD)================================================================================$(NORMAL)"
+	@echo ""
+	@echo "$(BOLD)Usage:$(NORMAL)"
+	@echo "  make <target>           Run a specific target"
+	@echo "  ENV=<env> make <target> Override environment (dev, local, uat, prod)"
+	@echo ""
+	@echo "$(BOLD)Build Targets:$(NORMAL)"
+	@echo "  build           Build in debug mode"
+	@echo "  build-release   Build in release mode"
+	@echo "  rebuild         Clean and rebuild"
+	@echo ""
+	@echo "$(BOLD)Run Targets:$(NORMAL)"
+	@echo "  run         Run application (default: dev)"
+	@echo "  run-dev     Run with dev environment"
+	@echo "  run-local   Run with local environment"
+	@echo "  run-uat     Run with UAT environment"
+	@echo "  run-prod    Run with prod environment"
+	@echo ""
+	@echo "$(BOLD)Test Targets:$(NORMAL)"
+	@echo "  test            Run all tests"
+	@echo "  test-unit       Run unit tests only"
+	@echo "  test-integration Run integration tests only"
+	@echo "  test-coverage   Run tests with coverage"
+	@echo ""
+	@echo "$(BOLD)Database Targets:$(NORMAL)"
+	@echo "  db-migrate      Run database migrations"
+	@echo "  db-seed         Seed database with test data"
+	@echo "  db-reset        Reset database (migrate + seed)"
+	@echo "  db-generate     Generate sqlc code"
+	@echo ""
+	@echo "$(BOLD)Code Quality Targets:$(NORMAL)"
+	@echo "  fmt             Format code with rustfmt"
+	@echo "  fmt-check       Check code formatting"
+	@echo "  clippy          Run clippy linter"
+	@echo "  lint            Run all linters (fmt + clippy)"
+	@echo "  audit           Check for security vulnerabilities"
+	@echo "  outdated        Check for outdated dependencies"
+	@echo ""
+	@echo "$(BOLD)Docker Targets:$(NORMAL)"
+	@echo "  docker-build    Build Docker image"
+	@echo "  docker-up       Start Docker containers"
+	@echo "  docker-down     Stop Docker containers"
+	@echo "  docker-logs     View Docker logs"
+	@echo "  docker-test     Run tests in Docker"
+	@echo "  docker-publish  Build and push Docker image"
+	@echo "  docker-shell    Open shell in Docker container"
+	@echo ""
+	@echo "$(BOLD)Clean Targets:$(NORMAL)"
+	@echo "  clean           Clean build artifacts"
+	@echo "  clean-all       Clean everything including Docker"
+	@echo "  clean-cache     Clean cargo cache"
+	@echo ""
+	@echo "$(BOLD)Development Helpers:$(NORMAL)"
+	@echo "  watch           Watch for changes and rebuild"
+	@echo "  watch-test      Watch and run tests"
+	@echo "  setup           Initial project setup"
+	@echo "  doc             Generate documentation"
+	@echo "  doc-open        Open documentation in browser"
+	@echo "  deps            Check project dependencies"
+	@echo "  help            Show this help message"
+	@echo ""
+	@echo "$(BOLD)================================================================================$(NORMAL)"
+	@echo ""
+
+# Default target
+all: build

@@ -1,27 +1,44 @@
-# Multi-stage build for production-ready Go application
-FROM golang AS builder
+# Multi-stage build for Rust axum application
+# Stage 1: Builder - Compile the application
+FROM mirror.gcr.io/library/rust:slim AS builder
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y git make tini
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
 
+# Set working directory
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy dependency files first for better caching
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy main.rs to cache dependencies
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+
+# Download and cache dependencies
+RUN cargo fetch && cargo build --release --locked
 
 # Copy source code
-COPY . .
+COPY src/ ./src/
+COPY configs/ ./configs/
+COPY sqlc/ ./sqlc/
 
 # Build the application with optimization flags
 ARG BUILD_VERSION=dev
 ARG BUILD_TIME
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s -X main.Version=${BUILD_VERSION} -X main.BuildTime=${BUILD_TIME}" -o service ./cmd/server
-
-# Build arguments: BUILD_VERSION=$(git rev-parse --short HEAD) BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+RUN cargo build --release \
+    --bin zercle-rust-template \
+    --locked \
+    --no-default-features \
+    --features ""
 
 # Final stage - distroless minimal runtime
-FROM gcr.io/distroless/static
+FROM gcr.io/distroless/base AS runner
 
 ENV TZ=Asia/Bangkok
 ENV LANG=C.UTF-8
@@ -32,7 +49,7 @@ WORKDIR /opt/app
 COPY --from=builder /usr/bin/tini-static /usr/bin/tini
 
 # Copy binary from builder
-COPY --from=builder /app/service .
+COPY --from=builder /app/target/release ./
 
 # Copy config files
 COPY --from=builder /app/configs ./configs
@@ -40,8 +57,7 @@ COPY --from=builder /app/configs ./configs
 # Expose port
 EXPOSE 3000
 
-# Run the application
+# Run the application with tini for proper signal handling
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["service"]
-
+CMD ["zercle-rust-template"]

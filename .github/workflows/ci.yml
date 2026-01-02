@@ -16,8 +16,9 @@ permissions:
   pull-requests: read
 
 env:
-  GO_VERSION: "stable"
+  RUST_VERSION: "stable"
   POSTGRES_VERSION: "18"
+  PROJECT_NAME: "zercle-rust-template"
 
 jobs:
   lint:
@@ -27,16 +28,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: latest
+      - name: Run linters
+        run: make lint
 
   security:
     name: Security Scan
@@ -45,18 +44,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
-        with:
-          args: "-no-fail -fmt sarif -out results.sarif ./..."
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
 
-      - name: Upload Gosec results to GitHub Security
+      - name: Run cargo-audit
+        run: cargo-audit audit --format sarif --output results.sarif
+
+      - name: Upload cargo-audit results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
@@ -69,19 +69,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
       - name: Check code formatting
-        run: |
-          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-            echo "The following files are not formatted:"
-            gofmt -s -l .
-            exit 1
-          fi
+        run: make fmt-check
 
   generate:
     name: Code Generation
@@ -90,35 +85,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
-      - name: Install tools
+      - name: Install sqlc
+        run: cargo install sqlc
+
+      - name: Verify sqlc configuration
         run: |
-          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-          go install github.com/swaggo/swag/cmd/swag@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          if [ ! -f "sqlc.yaml" ]; then
+            echo "Error: sqlc.yaml not found"
+            exit 1
+          fi
 
       - name: Generate code
-        run: make generate
+        run: make db-generate
 
       - name: Check for uncommitted changes
         run: |
-          git diff --exit-code || (echo "Generated code is out of date. Run 'make generate' and commit the changes."; exit 1)
-
-      - name: Verify swagger docs exist
-        run: |
-          if [ ! -f "docs/swagger.json" ]; then
-            echo "Error: docs/swagger.json not found"
-            exit 1
-          fi
-          if [ ! -f "docs/swagger.yaml" ]; then
-            echo "Error: docs/swagger.yaml not found"
-            exit 1
-          fi
+          git diff --exit-code || (echo "Generated code is out of date. Run 'make db-generate' and commit the changes."; exit 1)
 
   test-unit:
     name: Unit Tests
@@ -127,10 +115,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
       - name: Run unit tests
@@ -143,14 +131,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Set up PostgreSQL
+        uses: harmon758/postgresql-action@v1
+        with:
+          postgresql-version: ${{ env.POSTGRES_VERSION }}
 
       - name: Run integration tests
         run: make test-integration
@@ -162,19 +155,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
       - name: Run tests with coverage
-        run: make test-all
+        run: make test-coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: ./coverage.out
+          files: ./tarpaulin-report.html
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
@@ -187,23 +180,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: ${{ env.GO_VERSION }}
+          rust-version: ${{ env.RUST_VERSION }}
           cache: true
 
       - name: Build application
         run: make build
 
-      - name: Build with all tags
-        run: make build-all
+      - name: Build release
+        run: make build-release
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binary
-          path: bin/service
+          path: target/release/${{ env.PROJECT_NAME }}
           retention-days: 7
 
   docker:
@@ -219,5 +212,5 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t zercle-go-template:test -f deployments/docker/Dockerfile .
-          docker images zercle-go-template:test
+          docker build -t ${{ env.PROJECT_NAME }}:test -f deployments/docker/Dockerfile .
+          docker images ${{ env.PROJECT_NAME }}:test
