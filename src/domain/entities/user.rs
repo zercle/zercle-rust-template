@@ -83,7 +83,7 @@ impl CreateUserRequest {
             if let Some((field, errors)) = errors.field_errors().into_iter().next() {
                 if let Some(error) = errors.first() {
                     let message = error.message.as_deref().unwrap_or("Validation failed");
-                    let field_str: &str = &*field;
+                    let field_str: &str = &field;
                     return match field_str {
                         "email" => UserValidationError::EmailError(message.to_string()),
                         "password" => UserValidationError::PasswordError(message.to_string()),
@@ -150,7 +150,7 @@ impl UpdateUserRequest {
             if let Some((field, errors)) = errors.field_errors().into_iter().next() {
                 if let Some(error) = errors.first() {
                     let message = error.message.as_deref().unwrap_or("Validation failed");
-                    let field_str: &str = &*field;
+                    let field_str: &str = &field;
                     return match field_str {
                         "full_name" => UserValidationError::FullNameError(message.to_string()),
                         "phone" => UserValidationError::PhoneError(message.to_string()),
@@ -189,7 +189,7 @@ impl LoginRequest {
             if let Some((field, errors)) = errors.field_errors().into_iter().next() {
                 if let Some(error) = errors.first() {
                     let message = error.message.as_deref().unwrap_or("Validation failed");
-                    let field_str: &str = &*field;
+                    let field_str: &str = &field;
                     return match field_str {
                         "email" => UserValidationError::EmailError(message.to_string()),
                         "password" => UserValidationError::PasswordError(message.to_string()),

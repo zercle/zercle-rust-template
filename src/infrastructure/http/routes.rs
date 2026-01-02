@@ -25,6 +25,7 @@ pub fn create_router(
 ) -> Router {
     // Create middleware layers
     let cors_layer = create_cors_layer(settings);
+    #[allow(clippy::let_unit_value)]
     let logging_layer = create_logging_layer(settings);
     let rate_limit_layer = RateLimitLayer::new(settings);
     let auth_state = AuthState::new(settings);

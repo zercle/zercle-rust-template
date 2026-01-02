@@ -20,7 +20,6 @@ use zercle_rust_template::domain::repositories::{TaskRepository, UserRepository}
 
 mod user_repository_error_tests {
     use super::*;
-    use tokio::test;
 
     /// Mock user repository that simulates errors
     struct MockUserRepositoryWithErrors {
@@ -209,7 +208,6 @@ mod user_repository_error_tests {
 
 mod task_repository_error_tests {
     use super::*;
-    use tokio::test;
 
     /// Mock task repository that simulates errors
     struct MockTaskRepositoryWithErrors {
@@ -403,7 +401,6 @@ mod task_repository_error_tests {
 
 mod pagination_edge_cases_tests {
     use super::*;
-    use tokio::test;
 
     /// Mock user repository for pagination testing
     struct MockUserRepositoryPagination {
