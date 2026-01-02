@@ -10,13 +10,26 @@ use zercle_rust_template::config::Settings;
 // Helper function to clear all known env vars that could affect Settings
 fn clear_all_settings_env_vars() {
     let vars = [
-        "SERVER_HOST", "SERVER_PORT", "SERVER_ENV",
-        "DB_DRIVER", "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_POOL_SIZE", "DB_SSL_MODE",
-        "JWT_SECRET", "JWT_EXPIRATION_HOURS",
-        "LOG_LEVEL", "LOG_FORMAT",
+        "SERVER_HOST",
+        "SERVER_PORT",
+        "SERVER_ENV",
+        "DB_DRIVER",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_POOL_SIZE",
+        "DB_SSL_MODE",
+        "JWT_SECRET",
+        "JWT_EXPIRATION_HOURS",
+        "LOG_LEVEL",
+        "LOG_FORMAT",
         "CORS_ALLOWED_ORIGINS",
         "RATE_LIMIT_REQUESTS_PER_MINUTE",
-        "ARGON2ID_MEMORY_KB", "ARGON2ID_ITERATIONS", "ARGON2ID_PARALLELISM",
+        "ARGON2ID_MEMORY_KB",
+        "ARGON2ID_ITERATIONS",
+        "ARGON2ID_PARALLELISM",
     ];
     for var in &vars {
         std::env::remove_var(var);
@@ -35,7 +48,7 @@ mod settings_from_env_tests {
     fn test_settings_from_env() {
         // Clear all env vars first
         clear_all_settings_env_vars();
-        
+
         // Set environment variables
         std::env::set_var("SERVER_HOST", "127.0.0.1");
         std::env::set_var("SERVER_PORT", "8080");
@@ -90,7 +103,7 @@ mod settings_from_env_tests {
         assert_eq!(settings.database.name, "postgres");
         assert!(!settings.jwt.secret.is_empty());
         assert_eq!(settings.rate_limit.requests_per_minute, 100);
-        
+
         // Clean up
         clear_all_settings_env_vars();
     }
@@ -100,11 +113,11 @@ mod settings_from_env_tests {
     fn test_settings_invalid_port() {
         clear_all_settings_env_vars();
         std::env::set_var("SERVER_PORT", "invalid");
-        
+
         let settings = Settings::from_env();
-        
+
         assert!(settings.is_err(), "Settings should fail with invalid port");
-        
+
         clear_all_settings_env_vars();
     }
 
@@ -113,11 +126,14 @@ mod settings_from_env_tests {
     fn test_settings_invalid_rate_limit() {
         clear_all_settings_env_vars();
         std::env::set_var("RATE_LIMIT_REQUESTS_PER_MINUTE", "not-a-number");
-        
+
         let settings = Settings::from_env();
-        
-        assert!(settings.is_err(), "Settings should fail with invalid rate limit");
-        
+
+        assert!(
+            settings.is_err(),
+            "Settings should fail with invalid rate limit"
+        );
+
         clear_all_settings_env_vars();
     }
 }
@@ -170,7 +186,7 @@ mod settings_database_url_tests {
         };
 
         let url = settings.database_url();
-        
+
         assert!(url.contains("postgres://"));
         assert!(url.contains("postgres:postgres@localhost:5432/mydb"));
         assert!(url.contains("sslmode=disable"));
@@ -217,7 +233,7 @@ mod settings_database_url_tests {
         };
 
         let url = settings.database_url();
-        
+
         assert!(url.contains("admin:p@ss:word/123@db.example.com:5432/production"));
         assert!(url.contains("sslmode=require"));
     }
@@ -263,7 +279,7 @@ mod settings_database_url_tests {
         };
 
         let url = settings.database_url();
-        
+
         // Expected format: postgres://user:pass@host:port/dbname?sslmode=value
         assert!(url.starts_with("postgres://"));
         assert!(url.contains("@"));
@@ -424,7 +440,7 @@ mod settings_file_tests {
     fn test_settings_from_file() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test.yaml");
-        
+
         let yaml_content = r#"
 server:
   host: "192.168.1.1"
@@ -486,9 +502,9 @@ argon2id:
     #[test]
     fn test_settings_from_nonexistent_file() {
         let non_existent_path = Path::new("/nonexistent/config.yaml");
-        
+
         let settings = Settings::from_file(non_existent_path);
-        
+
         assert!(settings.is_err());
     }
 
@@ -497,7 +513,7 @@ argon2id:
     fn test_settings_from_invalid_yaml() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("invalid.yaml");
-        
+
         let invalid_yaml = r#"
 server:
   host: "localhost"
@@ -507,7 +523,7 @@ server:
         std::fs::write(&config_path, invalid_yaml).unwrap();
 
         let settings = Settings::from_file(&config_path);
-        
+
         assert!(settings.is_err());
     }
 
@@ -516,7 +532,7 @@ server:
     fn test_settings_from_file_with_env() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.yaml");
-        
+
         let yaml_content = r#"
 server:
   host: "0.0.0.0"
@@ -558,7 +574,7 @@ argon2id:
 
         // Clear env vars first, then set only what we need for override
         clear_all_settings_env_vars();
-        
+
         // Set environment variable to override - config crate uses double underscore for nesting
         // so SERVER__PORT maps to server.port
         std::env::set_var("SERVER__PORT", "9999");
@@ -591,14 +607,26 @@ mod settings_cors_tests {
     #[test]
     fn test_cors_allowed_origins_parsing() {
         clear_all_settings_env_vars();
-        std::env::set_var("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080,https://example.com");
+        std::env::set_var(
+            "CORS_ALLOWED_ORIGINS",
+            "http://localhost:3000,http://localhost:8080,https://example.com",
+        );
 
         let settings = Settings::from_env().unwrap();
 
         assert_eq!(settings.cors.allowed_origins.len(), 3);
-        assert!(settings.cors.allowed_origins.contains(&"http://localhost:3000".to_string()));
-        assert!(settings.cors.allowed_origins.contains(&"http://localhost:8080".to_string()));
-        assert!(settings.cors.allowed_origins.contains(&"https://example.com".to_string()));
+        assert!(settings
+            .cors
+            .allowed_origins
+            .contains(&"http://localhost:3000".to_string()));
+        assert!(settings
+            .cors
+            .allowed_origins
+            .contains(&"http://localhost:8080".to_string()));
+        assert!(settings
+            .cors
+            .allowed_origins
+            .contains(&"https://example.com".to_string()));
 
         clear_all_settings_env_vars();
     }
@@ -621,13 +649,22 @@ mod settings_cors_tests {
     #[test]
     fn test_cors_origins_with_whitespace() {
         clear_all_settings_env_vars();
-        std::env::set_var("CORS_ALLOWED_ORIGINS", " http://localhost:3000 , http://localhost:8080 ");
+        std::env::set_var(
+            "CORS_ALLOWED_ORIGINS",
+            " http://localhost:3000 , http://localhost:8080 ",
+        );
 
         let settings = Settings::from_env().unwrap();
 
         assert_eq!(settings.cors.allowed_origins.len(), 2);
-        assert!(settings.cors.allowed_origins.contains(&"http://localhost:3000".to_string()));
-        assert!(settings.cors.allowed_origins.contains(&"http://localhost:8080".to_string()));
+        assert!(settings
+            .cors
+            .allowed_origins
+            .contains(&"http://localhost:3000".to_string()));
+        assert!(settings
+            .cors
+            .allowed_origins
+            .contains(&"http://localhost:8080".to_string()));
 
         clear_all_settings_env_vars();
     }
@@ -689,14 +726,14 @@ mod settings_argon2id_tests {
     #[test]
     fn test_argon2id_default_values() {
         clear_all_settings_env_vars();
-        
+
         let settings = Settings::from_env().unwrap();
 
         // Default values from Settings::from_env()
         assert_eq!(settings.argon2id.memory_kb, 19456);
         assert_eq!(settings.argon2id.iterations, 2);
         assert_eq!(settings.argon2id.parallelism, 1);
-        
+
         clear_all_settings_env_vars();
     }
 }
