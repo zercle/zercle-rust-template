@@ -9,7 +9,9 @@ use crate::domain::repositories::{TaskRepository, UserRepository};
 use crate::domain::usecases::{TaskUsecaseImpl, UserUsecaseImpl};
 use crate::infrastructure::db::connection::{connect, Database};
 use crate::infrastructure::db::migrations::Migrations;
-use crate::infrastructure::db::postgres_repository::{PostgresTaskRepository, PostgresUserRepository};
+use crate::infrastructure::db::postgres_repository::{
+    PostgresTaskRepository, PostgresUserRepository,
+};
 use crate::infrastructure::http::server::Server;
 use anyhow::{Context, Result};
 use std::net::SocketAddr;
@@ -83,12 +85,10 @@ impl App {
         tracing::info!("Database migrations completed");
 
         // Initialize repositories
-        let user_repo: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(
-            db.pool().clone()
-        ));
-        let task_repo: Arc<dyn TaskRepository> = Arc::new(PostgresTaskRepository::new(
-            db.pool().clone()
-        ));
+        let user_repo: Arc<dyn UserRepository> =
+            Arc::new(PostgresUserRepository::new(db.pool().clone()));
+        let task_repo: Arc<dyn TaskRepository> =
+            Arc::new(PostgresTaskRepository::new(db.pool().clone()));
         tracing::info!("Repositories initialized");
 
         // Initialize use cases
@@ -97,13 +97,9 @@ impl App {
         tracing::info!("Use cases initialized");
 
         // Create server
-        let server = Server::from_dependencies(
-            &settings,
-            user_usecase.clone(),
-            task_usecase.clone(),
-            &db,
-        )
-        .context("Failed to create server")?;
+        let server =
+            Server::from_dependencies(&settings, user_usecase.clone(), task_usecase.clone(), &db)
+                .context("Failed to create server")?;
         tracing::info!("Server created successfully");
 
         Ok(Self {
@@ -168,10 +164,7 @@ impl App {
     /// # Errors
     /// This function can fail if the server fails to start or run
     pub async fn run_server(self) -> Result<(), Box<dyn std::error::Error>> {
-        tracing::info!(
-            "Starting server on {}",
-            self.server.addr()
-        );
+        tracing::info!("Starting server on {}", self.server.addr());
 
         // Run the server
         self.server.run().await?;

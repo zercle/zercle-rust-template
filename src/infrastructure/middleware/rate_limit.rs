@@ -3,12 +3,8 @@
 //! This module handles request rate limiting using an in-memory store.
 
 use crate::config::Settings;
-use axum::{
-    body::Body,
-    extract::Request,
-    response::Response,
-};
 use axum::http::{header, StatusCode};
+use axum::{body::Body, extract::Request, response::Response};
 use serde::Serialize;
 use std::{
     sync::Arc,
@@ -73,13 +69,13 @@ impl InMemoryRateLimiter {
             if entry.count < max_requests {
                 entry.count += 1;
                 let remaining = max_requests - entry.count;
-                let reset_time = window_secs
-                    .saturating_sub(now.duration_since(entry.window_start).as_secs());
+                let reset_time =
+                    window_secs.saturating_sub(now.duration_since(entry.window_start).as_secs());
                 return (true, remaining, reset_time);
             }
 
-            let reset_time = window_secs
-                .saturating_sub(now.duration_since(entry.window_start).as_secs());
+            let reset_time =
+                window_secs.saturating_sub(now.duration_since(entry.window_start).as_secs());
             return (false, 0, reset_time);
         }
 
@@ -156,18 +152,22 @@ pub async fn rate_limit_middleware(
     mut req: Request,
     next: axum::middleware::Next,
 ) -> Result<Response, StatusCode> {
-    let client_ip = RateLimitLayer::extract_client_ip(&req)
-        .unwrap_or_else(|| "unknown".to_string());
+    let client_ip =
+        RateLimitLayer::extract_client_ip(&req).unwrap_or_else(|| "unknown".to_string());
 
     let (allowed, remaining, retry_after) = state
         .limiter
-        .check_rate_limit(&client_ip, state.config.requests_per_minute, state.config.window_secs)
+        .check_rate_limit(
+            &client_ip,
+            state.config.requests_per_minute,
+            state.config.window_secs,
+        )
         .await;
 
     if !allowed {
         let body = r#"{"success":false,"error":"Rate limit exceeded. Please try again later.","retry_after":"# 
-            .to_string() 
-            + &retry_after.to_string() 
+            .to_string()
+            + &retry_after.to_string()
             + r#""}"#;
 
         let response = axum::http::Response::builder()
@@ -181,14 +181,25 @@ pub async fn rate_limit_middleware(
     }
 
     // Add rate limit headers to request
-    if let Ok(limit_val) = header::HeaderValue::from_str(&state.config.requests_per_minute.to_string()) {
-        req.headers_mut().insert(header::HeaderName::from_static("x-ratelimit-limit"), limit_val);
+    if let Ok(limit_val) =
+        header::HeaderValue::from_str(&state.config.requests_per_minute.to_string())
+    {
+        req.headers_mut().insert(
+            header::HeaderName::from_static("x-ratelimit-limit"),
+            limit_val,
+        );
     }
     if let Ok(remaining_val) = header::HeaderValue::from_str(&remaining.to_string()) {
-        req.headers_mut().insert(header::HeaderName::from_static("x-ratelimit-remaining"), remaining_val);
+        req.headers_mut().insert(
+            header::HeaderName::from_static("x-ratelimit-remaining"),
+            remaining_val,
+        );
     }
     if let Ok(reset_val) = header::HeaderValue::from_str(&retry_after.to_string()) {
-        req.headers_mut().insert(header::HeaderName::from_static("x-ratelimit-reset"), reset_val);
+        req.headers_mut().insert(
+            header::HeaderName::from_static("x-ratelimit-reset"),
+            reset_val,
+        );
     }
 
     Ok(next.run(req).await)

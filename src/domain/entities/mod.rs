@@ -2,9 +2,9 @@ pub mod task;
 pub mod user;
 
 pub use task::{
-    CreateTask, Task, TaskPriority, TaskStatus, UpdateTask, CreateTaskRequest, UpdateTaskRequest,
+    CreateTask, CreateTaskRequest, Task, TaskPriority, TaskStatus, UpdateTask, UpdateTaskRequest,
 };
 pub use user::{
-    CreateUser, LoginRequest, UpdateUser, UpdateUserRequest, User, UserValidationError,
-    CreateUserRequest,
+    CreateUser, CreateUserRequest, LoginRequest, UpdateUser, UpdateUserRequest, User,
+    UserValidationError,
 };

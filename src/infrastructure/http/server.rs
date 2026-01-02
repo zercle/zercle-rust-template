@@ -51,7 +51,12 @@ impl Server {
             .parse()
             .context("Failed to parse server address")?;
 
-        let router = create_router(user_usecase, task_usecase, settings, database.pool().clone());
+        let router = create_router(
+            user_usecase,
+            task_usecase,
+            settings,
+            database.pool().clone(),
+        );
 
         Ok(Self::new(router, addr))
     }
@@ -79,8 +84,7 @@ impl Server {
         tracing::info!("Server listening on {}", self.addr);
 
         // Create the server
-        let server = axum::serve(listener, self.router)
-            .with_graceful_shutdown(shutdown_signal());
+        let server = axum::serve(listener, self.router).with_graceful_shutdown(shutdown_signal());
 
         // Run the server
         server.await.context("Server failed")?;

@@ -145,7 +145,7 @@ impl TaskUsecase for TaskUsecaseImpl {
             .find_by_id(id)
             .await
             .context("Failed to find task by id")?
-            .ok_or_else(|| TaskUsecaseError::TaskNotFound(id))?;
+            .ok_or(TaskUsecaseError::TaskNotFound(id))?;
 
         // Verify ownership
         if task.user_id != user_id {
@@ -193,7 +193,7 @@ impl TaskUsecase for TaskUsecaseImpl {
             .find_by_id(id)
             .await
             .context("Failed to find task by id")?
-            .ok_or_else(|| TaskUsecaseError::TaskNotFound(id))?;
+            .ok_or(TaskUsecaseError::TaskNotFound(id))?;
 
         // Verify ownership
         if task.user_id != user_id {
@@ -245,7 +245,7 @@ impl TaskUsecase for TaskUsecaseImpl {
             .find_by_id(id)
             .await
             .context("Failed to find task by id")?
-            .ok_or_else(|| TaskUsecaseError::TaskNotFound(id))?;
+            .ok_or(TaskUsecaseError::TaskNotFound(id))?;
 
         // Verify ownership
         if task.user_id != user_id {
@@ -413,7 +413,10 @@ mod tests {
 
         let result = usecase.get_task(created.id, other_user_id).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TaskUsecaseError::TaskNotOwned(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            TaskUsecaseError::TaskNotOwned(_)
+        ));
     }
 
     #[tokio::test]
@@ -466,6 +469,9 @@ mod tests {
         // Verify task is deleted
         let get_result = usecase.get_task(created.id, user_id).await;
         assert!(get_result.is_err());
-        assert!(matches!(get_result.unwrap_err(), TaskUsecaseError::TaskNotFound(_)));
+        assert!(matches!(
+            get_result.unwrap_err(),
+            TaskUsecaseError::TaskNotFound(_)
+        ));
     }
 }

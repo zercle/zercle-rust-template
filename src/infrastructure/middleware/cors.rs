@@ -4,7 +4,7 @@
 
 use crate::config::Settings;
 use axum::http::{header, Method};
-use tower_http::cors::{CorsLayer, AllowOrigin, AllowMethods, AllowHeaders};
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 
 /// Create a CORS layer from settings
 pub fn create_cors_layer(settings: &Settings) -> CorsLayer {

@@ -9,13 +9,13 @@ use validator::{Validate, ValidationErrors};
 pub enum UserValidationError {
     #[error("Email validation failed: {0}")]
     EmailError(String),
-    
+
     #[error("Password validation failed: {0}")]
     PasswordError(String),
-    
+
     #[error("Phone validation failed: {0}")]
     PhoneError(String),
-    
+
     #[error("Full name validation failed: {0}")]
     FullNameError(String),
 }
@@ -60,15 +60,15 @@ pub struct CreateUserRequest {
     /// User's email address (must be valid format)
     #[validate(email(message = "Invalid email format"))]
     pub email: String,
-    
+
     /// User's password (min 8 chars)
     #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
     pub password: String,
-    
+
     /// Optional full name
     #[validate(length(max = 255, message = "Full name must not exceed 255 characters"))]
     pub full_name: Option<String>,
-    
+
     /// Optional phone number
     #[validate(length(max = 20, message = "Phone number must not exceed 20 characters"))]
     pub phone: Option<String>,
@@ -80,8 +80,8 @@ impl CreateUserRequest {
         // Run validator crate's built-in validations
         self.validate().map_err(|errors: ValidationErrors| {
             // Get the first error
-            for (field, errors) in errors.field_errors() {
-                for error in errors {
+            if let Some((field, errors)) = errors.field_errors().into_iter().next() {
+                if let Some(error) = errors.first() {
                     let message = error.message.as_deref().unwrap_or("Validation failed");
                     let field_str: &str = field;
                     return match field_str {
@@ -95,38 +95,38 @@ impl CreateUserRequest {
             }
             UserValidationError::PasswordError("Validation failed".to_string())
         })?;
-        
+
         // Custom password complexity validation
         let password = &self.password;
         let has_upper = password.chars().any(|c| c.is_uppercase());
         let has_lower = password.chars().any(|c| c.is_lowercase());
         let has_digit = password.chars().any(|c| c.is_ascii_digit());
         let has_special = password.chars().any(|c| !c.is_alphanumeric());
-        
+
         if !has_upper {
             return Err(UserValidationError::PasswordError(
-                "Password must contain at least one uppercase letter".to_string()
+                "Password must contain at least one uppercase letter".to_string(),
             ));
         }
-        
+
         if !has_lower {
             return Err(UserValidationError::PasswordError(
-                "Password must contain at least one lowercase letter".to_string()
+                "Password must contain at least one lowercase letter".to_string(),
             ));
         }
-        
+
         if !has_digit {
             return Err(UserValidationError::PasswordError(
-                "Password must contain at least one number".to_string()
+                "Password must contain at least one number".to_string(),
             ));
         }
-        
+
         if !has_special {
             return Err(UserValidationError::PasswordError(
-                "Password must contain at least one special character".to_string()
+                "Password must contain at least one special character".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 }
@@ -137,7 +137,7 @@ pub struct UpdateUserRequest {
     /// Optional full name to update
     #[validate(length(max = 255, message = "Full name must not exceed 255 characters"))]
     pub full_name: Option<String>,
-    
+
     /// Optional phone number to update
     #[validate(length(max = 20, message = "Phone number must not exceed 20 characters"))]
     pub phone: Option<String>,
@@ -147,8 +147,8 @@ impl UpdateUserRequest {
     /// Validate the update user request
     pub fn validate_request(&self) -> Result<(), UserValidationError> {
         self.validate().map_err(|errors: ValidationErrors| {
-            for (field, errors) in errors.field_errors() {
-                for error in errors {
+            if let Some((field, errors)) = errors.field_errors().into_iter().next() {
+                if let Some(error) = errors.first() {
                     let message = error.message.as_deref().unwrap_or("Validation failed");
                     let field_str: &str = field;
                     return match field_str {
@@ -160,10 +160,10 @@ impl UpdateUserRequest {
             }
             UserValidationError::FullNameError("Validation failed".to_string())
         })?;
-        
+
         Ok(())
     }
-    
+
     /// Check if the update request has any fields to update
     pub fn has_updates(&self) -> bool {
         self.full_name.is_some() || self.phone.is_some()
@@ -176,7 +176,7 @@ pub struct LoginRequest {
     /// User's email address
     #[validate(email(message = "Invalid email format"))]
     pub email: String,
-    
+
     /// User's password
     #[validate(length(min = 1, message = "Password is required"))]
     pub password: String,
@@ -186,8 +186,8 @@ impl LoginRequest {
     /// Validate the login request
     pub fn validate_request(&self) -> Result<(), UserValidationError> {
         self.validate().map_err(|errors: ValidationErrors| {
-            for (field, errors) in errors.field_errors() {
-                for error in errors {
+            if let Some((field, errors)) = errors.field_errors().into_iter().next() {
+                if let Some(error) = errors.first() {
                     let message = error.message.as_deref().unwrap_or("Validation failed");
                     let field_str: &str = field;
                     return match field_str {
@@ -199,7 +199,7 @@ impl LoginRequest {
             }
             UserValidationError::EmailError("Validation failed".to_string())
         })?;
-        
+
         Ok(())
     }
 }
@@ -231,7 +231,7 @@ impl CreateUser {
 }
 
 /// Data structure for updating a user (repository layer)
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct UpdateUser {
     pub email: Option<String>,
     pub password_hash: Option<String>,
@@ -242,43 +242,38 @@ pub struct UpdateUser {
 impl UpdateUser {
     /// Create a new UpdateUser instance
     pub fn new() -> Self {
-        Self {
-            email: None,
-            password_hash: None,
-            full_name: None,
-            phone: None,
-        }
+        Self::default()
     }
-    
+
     /// Set the email
     pub fn with_email(mut self, email: String) -> Self {
         self.email = Some(email);
         self
     }
-    
+
     /// Set the password hash
     pub fn with_password_hash(mut self, password_hash: String) -> Self {
         self.password_hash = Some(password_hash);
         self
     }
-    
+
     /// Set the full name
     pub fn with_full_name(mut self, full_name: Option<String>) -> Self {
         self.full_name = full_name;
         self
     }
-    
+
     /// Set the phone
     pub fn with_phone(mut self, phone: Option<String>) -> Self {
         self.phone = phone;
         self
     }
-    
+
     /// Check if there are any updates
     pub fn has_updates(&self) -> bool {
-        self.email.is_some() 
-            || self.password_hash.is_some() 
-            || self.full_name.is_some() 
+        self.email.is_some()
+            || self.password_hash.is_some()
+            || self.full_name.is_some()
             || self.phone.is_some()
     }
 }

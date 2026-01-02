@@ -37,7 +37,7 @@ impl Database {
     /// ```
     pub async fn connect(settings: &Settings) -> Result<Self> {
         let database_url = settings.database_url();
-        
+
         // Parse the database URL into connection options
         let options: PgConnectOptions = database_url
             .parse()
@@ -45,7 +45,7 @@ impl Database {
 
         // Configure connection pool
         let pool = PgPoolOptions::new()
-            .max_connections(settings.database.pool_size as u32)
+            .max_connections(settings.database.pool_size)
             .acquire_timeout(Duration::from_secs(30))
             .idle_timeout(Duration::from_secs(600))
             .max_lifetime(Duration::from_secs(3600))
@@ -143,10 +143,7 @@ impl Database {
     /// - size: Total number of connections in the pool
     /// - idle: Number of idle connections
     pub fn pool_size(&self) -> (u32, u32) {
-        (
-            self.pool.size() as u32,
-            self.pool.num_idle() as u32
-        )
+        (self.pool.size() as u32, self.pool.num_idle() as u32)
     }
 
     /// Close the database connection pool
@@ -192,13 +189,13 @@ impl Database {
 /// ```
 pub async fn connect(settings: &Settings) -> Result<DbPool> {
     let database_url = settings.database_url();
-    
+
     let options: PgConnectOptions = database_url
         .parse()
         .context("Failed to parse database URL")?;
 
     let pool = PgPoolOptions::new()
-        .max_connections(settings.database.pool_size as u32)
+        .max_connections(settings.database.pool_size)
         .acquire_timeout(Duration::from_secs(30))
         .idle_timeout(Duration::from_secs(600))
         .max_lifetime(Duration::from_secs(3600))
@@ -244,7 +241,10 @@ pub async fn health_check(pool: &DbPool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::{Settings, ServerConfig, DatabaseConfig, JwtConfig, LoggingConfig, CorsConfig, RateLimitConfig, Argon2idConfig};
+    use crate::config::settings::{
+        Argon2idConfig, CorsConfig, DatabaseConfig, JwtConfig, LoggingConfig, RateLimitConfig,
+        ServerConfig, Settings,
+    };
 
     #[test]
     fn test_database_url_construction() {

@@ -3,13 +3,13 @@
 //! This module handles JWT validation and user authentication.
 
 use crate::config::Settings;
+use axum::http::StatusCode;
 use axum::{
     extract::{Request, State},
     middleware::Next,
     response::Response,
     Json,
 };
-use axum::http::StatusCode;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

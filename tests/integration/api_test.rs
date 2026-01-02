@@ -3,51 +3,25 @@
 //! These tests verify the API endpoints with a real database connection.
 //! They test the full request/response cycle including authentication.
 
+use reqwest;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
-use chrono::{Duration, Utc};
-use reqwest;
 
-use zercle_rust_template::config::Settings;
-use zercle_rust_template::infrastructure::db::connection::Database;
-use zercle_rust_template::infrastructure::db::migrations::Migrations;
-use zercle_rust_template::infrastructure::http::routes::create_router;
-use zercle_rust_template::infrastructure::http::server::Server;
-use zercle_rust_template::domain::usecases::{TaskUsecaseImpl, UserUsecaseImpl};
-use zercle_rust_template::domain::entities::{CreateUserRequest, LoginRequest, CreateTaskRequest, TaskPriority};
-use zercle_rust_template::infrastructure::db::postgres_repository::{PostgresUserRepository, PostgresTaskRepository};
+use std::net::SocketAddr;
 use std::sync::Arc;
+use zercle_rust_template::config::Settings;
+use zercle_rust_template::domain::usecases::{TaskUsecaseImpl, UserUsecaseImpl};
+use zercle_rust_template::infrastructure::db::migrations::Migrations;
+use zercle_rust_template::infrastructure::db::postgres_repository::{
+    PostgresTaskRepository, PostgresUserRepository,
+};
+use zercle_rust_template::infrastructure::http::routes::create_router;
 
-/// Test configuration for integration tests
-struct TestConfig {
-    pub pool: Pool<Postgres>,
-    pub base_url: String,
-    pub settings: Settings,
-}
-
-/// Setup test database and application
-async fn setup_test_app() -> TestConfig {
-    let settings = Settings {
-        server: Settings::from_env().unwrap().server,
-        database: Settings::from_env().unwrap().database,
-        jwt: Settings::from_env().unwrap().jwt,
-        logging: Settings::from_env().unwrap().logging,
-        cors: Settings::from_env().unwrap().cors,
-        rate_limit: Settings::from_env().unwrap().rate_limit,
-        argon2id: Settings::from_env().unwrap().argon2id,
-    };
-
-    // Connect to database
-    let db = Database::connect(&settings).await.expect("Failed to connect to database");
-    
-    // Run migrations
-    Migrations::run(db.pool()).await.expect("Failed to run migrations");
-
-    TestConfig {
-        pool: db.pool().clone(),
-        base_url: format!("http://localhost:{}", settings.server.port),
-        settings,
-    }
+/// Run database migrations for tests
+async fn run_migrations(pool: &Pool<Postgres>) {
+    Migrations::run(pool)
+        .await
+        .expect("Failed to run migrations");
 }
 
 /// Helper function to register a test user
@@ -72,24 +46,21 @@ async fn register_test_user(
     Ok(body["data"]["token"].as_str().unwrap_or("").to_string())
 }
 
-/// Helper function to login and get token
-async fn login_test_user(
-    client: &reqwest::Client,
-    base_url: &str,
-    email: &str,
-    password: &str,
-) -> reqwest::Result<String> {
-    let response = client
-        .post(&format!("{}/api/v1/auth/login", base_url))
-        .json(&serde_json::json!({
-            "email": email,
-            "password": password
-        }))
-        .send()
-        .await?;
+/// Starts a test server and returns the base URL
+async fn start_test_server(router: axum::Router) -> (String, tokio::task::JoinHandle<()>) {
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
 
-    let body: serde_json::Value = response.json().await?;
-    Ok(body["data"]["token"].as_str().unwrap_or("").to_string())
+    let server = axum::serve(listener, router);
+    let handle = tokio::spawn(async move {
+        let _ = server.await;
+    });
+
+    // Give the server a moment to start
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    (base_url, handle)
 }
 
 mod auth_tests {
@@ -98,6 +69,7 @@ mod auth_tests {
     /// Test user registration
     #[sqlx::test]
     async fn test_register_and_login(pool: Pool<Postgres>) {
+        run_migrations(&pool).await;
         let settings = Settings::from_env().unwrap();
         let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
         let task_repo = Arc::new(PostgresTaskRepository::new(pool.clone()));
@@ -105,16 +77,8 @@ mod auth_tests {
         let task_usecase = Arc::new(TaskUsecaseImpl::new(task_repo.clone()));
 
         let router = create_router(user_usecase, task_usecase, &settings, pool.clone());
-        
-        // Start a test server
-        let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap())
-            .serve(router);
-        let addr = server.local_addr();
-        let base_url = format!("http://{}", addr);
-        
-        tokio::spawn(async move {
-            let _ = server.await;
-        });
+
+        let (base_url, _handle) = start_test_server(router).await;
 
         let client = reqwest::Client::new();
         let email = format!("test_{}@example.com", Uuid::new_v4());
@@ -136,7 +100,7 @@ mod auth_tests {
         let body: serde_json::Value = response.json().await.unwrap();
         assert!(body["success"].as_bool().unwrap());
         assert!(body["data"]["token"].is_string());
-        let token = body["data"]["token"].as_str().unwrap().to_string();
+        let _token = body["data"]["token"].as_str().unwrap().to_string();
 
         // Test login with same credentials
         let response = client
@@ -158,6 +122,7 @@ mod auth_tests {
     /// Test duplicate registration fails
     #[sqlx::test]
     async fn test_duplicate_registration_fails(pool: Pool<Postgres>) {
+        run_migrations(&pool).await;
         let settings = Settings::from_env().unwrap();
         let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
         let task_repo = Arc::new(PostgresTaskRepository::new(pool.clone()));
@@ -165,15 +130,8 @@ mod auth_tests {
         let task_usecase = Arc::new(TaskUsecaseImpl::new(task_repo.clone()));
 
         let router = create_router(user_usecase, task_usecase, &settings, pool.clone());
-        
-        let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap())
-            .serve(router);
-        let addr = server.local_addr();
-        let base_url = format!("http://{}", addr);
-        
-        tokio::spawn(async move {
-            let _ = server.await;
-        });
+
+        let (base_url, _handle) = start_test_server(router).await;
 
         let client = reqwest::Client::new();
         let email = format!("duplicate_{}@example.com", Uuid::new_v4());
@@ -214,6 +172,7 @@ mod task_tests {
     /// Test task CRUD operations
     #[sqlx::test]
     async fn test_create_and_manage_task(pool: Pool<Postgres>) {
+        run_migrations(&pool).await;
         let settings = Settings::from_env().unwrap();
         let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
         let task_repo = Arc::new(PostgresTaskRepository::new(pool.clone()));
@@ -221,21 +180,16 @@ mod task_tests {
         let task_usecase = Arc::new(TaskUsecaseImpl::new(task_repo.clone()));
 
         let router = create_router(user_usecase, task_usecase, &settings, pool.clone());
-        
-        let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap())
-            .serve(router);
-        let addr = server.local_addr();
-        let base_url = format!("http://{}", addr);
-        
-        tokio::spawn(async move {
-            let _ = server.await;
-        });
+
+        let (base_url, _handle) = start_test_server(router).await;
 
         let client = reqwest::Client::new();
         let email = format!("task_user_{}@example.com", Uuid::new_v4());
 
         // Register and login
-        let token = register_test_user(&client, &base_url, &email, "Password123!").await;
+        let token = register_test_user(&client, &base_url, &email, "Password123!")
+            .await
+            .unwrap();
 
         // Create a task
         let response = client
@@ -320,6 +274,7 @@ mod task_tests {
     /// Test unauthorized access
     #[sqlx::test]
     async fn test_unauthorized_access(pool: Pool<Postgres>) {
+        run_migrations(&pool).await;
         let settings = Settings::from_env().unwrap();
         let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
         let task_repo = Arc::new(PostgresTaskRepository::new(pool.clone()));
@@ -327,15 +282,8 @@ mod task_tests {
         let task_usecase = Arc::new(TaskUsecaseImpl::new(task_repo.clone()));
 
         let router = create_router(user_usecase, task_usecase, &settings, pool.clone());
-        
-        let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap())
-            .serve(router);
-        let addr = server.local_addr();
-        let base_url = format!("http://{}", addr);
-        
-        tokio::spawn(async move {
-            let _ = server.await;
-        });
+
+        let (base_url, _handle) = start_test_server(router).await;
 
         let client = reqwest::Client::new();
 
@@ -362,6 +310,7 @@ mod task_tests {
     /// Test task ownership
     #[sqlx::test]
     async fn test_task_ownership(pool: Pool<Postgres>) {
+        run_migrations(&pool).await;
         let settings = Settings::from_env().unwrap();
         let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
         let task_repo = Arc::new(PostgresTaskRepository::new(pool.clone()));
@@ -369,15 +318,8 @@ mod task_tests {
         let task_usecase = Arc::new(TaskUsecaseImpl::new(task_repo.clone()));
 
         let router = create_router(user_usecase, task_usecase, &settings, pool.clone());
-        
-        let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap())
-            .serve(router);
-        let addr = server.local_addr();
-        let base_url = format!("http://{}", addr);
-        
-        tokio::spawn(async move {
-            let _ = server.await;
-        });
+
+        let (base_url, _handle) = start_test_server(router).await;
 
         let client = reqwest::Client::new();
 
@@ -385,8 +327,12 @@ mod task_tests {
         let email1 = format!("user1_{}@example.com", Uuid::new_v4());
         let email2 = format!("user2_{}@example.com", Uuid::new_v4());
 
-        let token1 = register_test_user(&client, &base_url, &email1, "Password123!").await;
-        let token2 = register_test_user(&client, &base_url, &email2, "Password123!").await;
+        let token1 = register_test_user(&client, &base_url, &email1, "Password123!")
+            .await
+            .unwrap();
+        let token2 = register_test_user(&client, &base_url, &email2, "Password123!")
+            .await
+            .unwrap();
 
         // User 1 creates a task
         let response = client
@@ -441,6 +387,7 @@ mod health_tests {
     /// Test health check endpoint
     #[sqlx::test]
     async fn test_health_check(pool: Pool<Postgres>) {
+        run_migrations(&pool).await;
         let settings = Settings::from_env().unwrap();
         let user_repo = Arc::new(PostgresUserRepository::new(pool.clone()));
         let task_repo = Arc::new(PostgresTaskRepository::new(pool.clone()));
@@ -448,15 +395,8 @@ mod health_tests {
         let task_usecase = Arc::new(TaskUsecaseImpl::new(task_repo.clone()));
 
         let router = create_router(user_usecase, task_usecase, &settings, pool.clone());
-        
-        let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap())
-            .serve(router);
-        let addr = server.local_addr();
-        let base_url = format!("http://{}", addr);
-        
-        tokio::spawn(async move {
-            let _ = server.await;
-        });
+
+        let (base_url, _handle) = start_test_server(router).await;
 
         let client = reqwest::Client::new();
 
