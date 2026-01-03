@@ -320,12 +320,12 @@ impl Migrations {
         for entry in migration_files {
             let path = entry.path();
             let sql_content = std::fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read migration file: {:?}", path))?;
+                .with_context(|| format!("Failed to read migration file: {path:?}"))?;
 
             sqlx::query(&sql_content)
                 .execute(pool)
                 .await
-                .with_context(|| format!("Failed to execute migration: {:?}", path))?;
+                .with_context(|| format!("Failed to execute migration: {path:?}"))?;
         }
 
         Ok(())

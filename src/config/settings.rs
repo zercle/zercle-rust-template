@@ -170,7 +170,7 @@ impl Settings {
 
     pub fn load() -> anyhow::Result<Self> {
         let env = std::env::var("SERVER_ENV").unwrap_or_else(|_| "local".to_string());
-        let config_path = format!("configs/{}.yaml", env);
+        let config_path = format!("configs/{env}.yaml");
 
         let path = Path::new(&config_path);
         if path.exists() {
