@@ -156,13 +156,14 @@ jobs:
 
       - name: Run database migrations
         run: |
-          # Create database if it doesn't exist (ignore if already exists)
-          cargo sqlx database create --database-url $DATABASE_URL || true
+          # Drop and recreate database to ensure clean state
+          PGPASSWORD=test_password psql -h localhost -U test_user -d postgres -c "DROP DATABASE IF EXISTS test_db;" || true
+          PGPASSWORD=test_password psql -h localhost -U test_user -d postgres -c "CREATE DATABASE test_db;"
           # Run migrations - they will apply in order based on timestamp
           cargo sqlx migrate run --database-url $DATABASE_URL --source sqlc/migrations
           # Verify migrations were applied
           echo "Verifying migrations..."
-          PGPASSWORD=test_password psql -h localhost -U test_user -d test_db -c "\dt" || true
+          PGPASSWORD=test_password psql -h localhost -U test_user -d test_db -c "\dt"
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
