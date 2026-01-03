@@ -343,6 +343,6 @@ argon2id:
         fs::write(&yaml_path, yaml_content).unwrap();
 
         let result = load_from_file(&yaml_path);
-        assert!(result.is_ok(), "Failed to load config: {:?}", result);
+        assert!(result.is_ok(), "Failed to load config: {result:?}");
     }
 }

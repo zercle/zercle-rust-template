@@ -113,10 +113,7 @@ pub async fn register(
         ),
         Err(UserUsecaseError::UserAlreadyExists(email)) => (
             StatusCode::CONFLICT,
-            Json(ApiResponse::error(&format!(
-                "User already exists with email: {}",
-                email
-            ))),
+            Json(ApiResponse::error(&format!("User already exists with email: {email}"))),
         ),
         Err(UserUsecaseError::ValidationError(msg)) => {
             (StatusCode::BAD_REQUEST, Json(ApiResponse::error(&msg)))

@@ -431,7 +431,7 @@ mod tests {
         // Create multiple tasks
         for i in 0..5 {
             let req = CreateTaskRequest {
-                title: format!("Test Task {}", i),
+                title: format!("Test Task {i}"),
                 description: None,
                 priority: None,
                 due_date: None,
