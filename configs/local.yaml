@@ -1,37 +1,23 @@
-server:
-  port: 3000
+app:
   host: "0.0.0.0"
+  port: 3000
   env: "local"
 
 database:
-  driver: "postgres"
   host: "localhost"
   port: 5432
   user: "postgres"
   password: "postgres"
-  dbname: "postgres"
-  max_conns: 25
-  min_conns: 5
-  max_conn_lifetime: 1h
-  max_conn_idletime: 10m
-  health_check_period: 1m
+  name: "zercle"
+  sslmode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "5m"
 
 jwt:
-  secret: "your-super-secret-jwt-key-for-development-only-123"
-  expiration: 3600
-
-logging:
-  level: "debug"
-  format: "console"
-
-cors:
-  allowed_origins:
-    - "http://localhost:3000"
-    - "http://localhost:8080"
-
-rate_limit:
-  requests: 100
-  window: 60
+  secret: "your-jwt-secret-key"
+  access_token_expiry: 3600
+  refresh_token_expiry: 604800
 
 argon2id:
   memory: 19456
@@ -39,3 +25,12 @@ argon2id:
   parallelism: 1
   salt_length: 16
   key_length: 32
+
+logging:
+  level: "debug"
+  format: "console"
+
+cors:
+  allowed_origins: ["*"]
+  allowed_methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  allowed_headers: ["Origin", "Content-Type", "Accept", "Authorization"]

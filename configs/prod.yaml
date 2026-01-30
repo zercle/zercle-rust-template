@@ -1,40 +1,36 @@
-server:
-  port: 3000
+app:
   host: "0.0.0.0"
+  port: 3000
   env: "prod"
 
 database:
-  host: "prod-db.example.com"
+  host: "db.zercle.internal"
   port: 5432
-  user: "prod_user"
-  password: "CHANGE_ME"
-  dbname: "zercle_db_prod"
-  driver: "postgres"
-  max_conns: 25
-  min_conns: 5
-  max_conn_lifetime: 1h
-  max_conn_idletime: 10m
-  health_check_period: 1m
+  user: "zercle"
+  password: "${DB_PASSWORD}"
+  name: "zercle"
+  sslmode: "require"
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: "5m"
 
 jwt:
-  secret: "" # Must be set via JWT_SECRET environment variable
-  expiration: 3600
+  secret: "${JWT_SECRET}"
+  access_token_expiry: 3600
+  refresh_token_expiry: 604800
+
+argon2id:
+  memory: 65536
+  iterations: 3
+  parallelism: 2
+  salt_length: 32
+  key_length: 64
 
 logging:
   level: "info"
   format: "json"
 
 cors:
-  allowed_origins:
-    - "https://app.example.com"
-
-rate_limit:
-  requests: 100
-  window: 60
-
-argon2id:
-  memory: 19456
-  iterations: 2
-  parallelism: 1
-  salt_length: 16
-  key_length: 32
+  allowed_origins: ["https://zercle.app", "https://admin.zercle.app"]
+  allowed_methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  allowed_headers: ["Origin", "Content-Type", "Accept", "Authorization"]

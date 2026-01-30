@@ -3,93 +3,42 @@ name = "zercle-rust-template"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-description = "A Rust-based template project using Axum framework with PostgreSQL"
+description = "A production-ready Rust web API template using Axum framework with PostgreSQL, JWT authentication, and Clean Architecture"
 
 [[test]]
-name = "api_test"
-path = "tests/integration/api_test.rs"
-
-[[test]]
-name = "handler_test"
-path = "tests/unit/handler_tests/handler_test.rs"
-
-[[test]]
-name = "middleware_test"
-path = "tests/unit/middleware_tests/middleware_test.rs"
-
-[[test]]
-name = "settings_test"
-path = "tests/unit/config_tests/settings_test.rs"
-
-[[test]]
-name = "usecase_test"
-path = "tests/unit/usecase_test.rs"
-
-[[test]]
-name = "entity_validation_test"
-path = "tests/unit/entity_validation_test.rs"
-
-[[test]]
-name = "repository_test"
-path = "tests/unit/repository_test.rs"
+name = "unit"
+path = "tests/unit/mod.rs"
 
 [dependencies]
-# Web framework
 axum = { version = "0.8", features = ["multipart", "tower-log"] }
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-br", "limit", "timeout", "set-header"] }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
-
-# Async runtime
 tokio = { version = "1", features = ["full"] }
-
-# Database
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
-
-# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-
-# Error handling
 anyhow = "1"
 thiserror = "2"
-
-# UUID and Date/Time
 uuid = { version = "1", features = ["v4", "serde", "fast-rng"] }
 chrono = { version = "0.4", features = ["serde"] }
-
-# Authentication and Security
 argon2 = "0.5"
 jsonwebtoken = "9"
-
-# Validation
 validator = { version = "0.20", features = ["derive"] }
-
-# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-# Configuration
 dotenv = "0.15"
 config = "0.15"
-
-# Async utilities
 futures = "0.3"
 async-trait = "0.1"
-
-# Async utilities
 tokio-util = { version = "0.7", features = ["compat"] }
-
-# Concurrency
 parking_lot = "0.12"
-
-# HTTP client (for external API calls)
 reqwest = { version = "0.13", features = ["json"] }
+rand = "0.8"
 
 [dev-dependencies]
-# Testing
 tokio-test = "0.4"
 wiremock = "0.6.4"
 mockall = "0.14"
@@ -106,7 +55,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "zercle-rust-template"
-path = "src/main.rs"
+path = "cmd/server/main.rs"
 
 [workspace]
 

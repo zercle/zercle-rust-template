@@ -1,20 +1,40 @@
-# Zercle Rust Template - Project Brief
+# Project Brief: Zercle Rust Template
 
-**Project Name:** zercle-rust-template
+**Initialized:** 2026-01-30  
+**Type:** Rust Web API Template  
+**Status:** Active Development
 
-**Purpose:** Production-ready RESTful API template built with Rust Axum framework, featuring clean architecture, JWT authentication, and PostgreSQL database.
+## Overview
+A production-ready Rust web API template built with Clean Architecture principles. Designed to serve as a foundation for scalable backend services with built-in authentication, database integration, and comprehensive tooling.
 
-**Target Audience:** Developers looking for a solid foundation to build Rust microservices or REST APIs with best practices already implemented.
+## Purpose
+- Provide a standardized starting point for Rust web API projects
+- Demonstrate Clean Architecture implementation in Rust
+- Include essential production features: auth, logging, config management, migrations
+- Enable rapid project bootstrap with sensible defaults
 
-**Key Value Proposition:**
-- Clean architecture with domain-driven design principles
-- Type-safe database operations using sqlx with compile-time checked queries
-- Comprehensive testing infrastructure (unit, integration, mocks)
-- Production-ready features (JWT auth, rate limiting, CORS, logging)
-- Docker support for easy deployment
-- OpenAPI documentation out of the box with utoipa
-- Memory safety and zero-cost abstractions from Rust
+## Target Use Cases
+- REST API backends for web/mobile applications
+- Microservices requiring JWT authentication
+- Projects needing PostgreSQL persistence
+- Services requiring structured logging and observability
 
-**Current Status:** Active development template with User and Task domains as working examples.
+## Core Philosophy
+- **Clean Architecture**: Domain-driven design with clear layer separation
+- **Production-Ready**: Security, performance, and maintainability built-in
+- **Developer Experience**: Clear patterns, comprehensive tooling, easy onboarding
+- **Extensibility**: Modular design for easy feature addition
 
-**Repository:** crates.io: zercle-rust-template
+## Current State
+- Basic project structure established
+- Database connectivity and migrations working
+- Configuration system supporting YAML and environment variables
+- Health check endpoint operational
+- Authentication domain models defined
+- Infrastructure layer partially implemented
+
+## Constraints
+- PostgreSQL required (no other database support planned)
+- JWT-based authentication only
+- Axum web framework locked
+- Rust 1.75+ minimum version

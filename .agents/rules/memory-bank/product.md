@@ -1,101 +1,109 @@
-# Product Goals & Features
+# Product Specification: Zercle Rust Template
 
-## Product Vision
-To provide a production-ready, well-architected Rust template that accelerates API development while maintaining code quality, security, and scalability through memory safety and zero-cost abstractions.
+## Goals
 
-## Core Features
+### Primary
+1. Provide a production-ready template for Rust web APIs
+2. Demonstrate idiomatic Clean Architecture in Rust
+3. Minimize boilerplate for new project initialization
+4. Establish consistent patterns across Zercle Rust projects
 
-### Authentication & Authorization
-- JWT-based authentication with configurable expiration
-- Argon2id password hashing for secure storage
-- User registration, login, and profile management
-- Protected routes with JWT middleware
-- Token refresh mechanism (optional)
+### Secondary
+1. Serve as educational reference for Rust backend development
+2. Support multiple deployment environments (local, dev, prod)
+3. Enable easy testing with built-in test utilities
 
-### User Management
-- User registration with email validation
-- Profile retrieval and updates
-- User listing with pagination
-- Account deletion
+## Features
 
-### Task Management (Example Domain)
-- CRUD operations for tasks
-- Task ownership verification
-- Status tracking (pending, in_progress, completed, cancelled)
-- Priority levels (low, medium, high, urgent)
-- Due date management
-- Pagination support
+### Implemented
+- [x] Configuration management (YAML + environment variables)
+- [x] Database connection pooling with SQLx
+- [x] Database migrations system
+- [x] Structured logging with tracing
+- [x] Health check endpoint
+- [x] User domain models (entity, refresh token)
+- [x] Argon2id password hashing configuration
+- [x] JWT configuration structure
 
-### API Features
-- RESTful API design
-- OpenAPI/Swagger documentation with utoipa
-- Request validation using validator or garde crate
-- Structured error responses
-- Health check endpoints
+### Planned
+- [ ] User registration endpoint
+- [ ] User login with JWT generation
+- [ ] Token refresh mechanism
+- [ ] Password validation utilities
+- [ ] CORS middleware integration
+- [ ] Request validation middleware
+- [ ] Error handling and response standardization
+- [ ] API versioning strategy
+- [ ] OpenAPI/Swagger documentation
+- [ ] Docker containerization
+- [ ] CI/CD pipeline templates
 
-## Non-Functional Requirements
+### Under Consideration
+- [ ] Rate limiting middleware
+- [ ] Request ID propagation
+- [ ] Metrics and health probes
+- [ ] Graceful shutdown handling
+- [ ] WebSocket support
 
-### Security
-- Password hashing with Argon2id
-- JWT token-based authentication
-- CORS configuration
-- Rate limiting (configurable requests per window)
-- Input validation and sanitization
-- Memory safety guarantees from Rust
-
-### Performance
-- Database connection pooling with sqlx
-- Efficient query generation with compile-time checking
-- Structured logging with tracing
-- Graceful shutdown handling with Tokio
-- Zero-cost abstractions
-- Async/await with Tokio runtime
-
-### Observability
-- Structured JSON logging with tracing
-- Request ID tracking
-- Health check endpoints
-- Configurable log levels
-- Optional OpenTelemetry integration
+## User Experience
 
 ### Developer Experience
-- Clear project structure with Rust modules
-- Type-safe database operations with sqlx
-- Comprehensive test coverage
-- Docker support for development and deployment
-- Makefile for common operations
-- Cargo workspace support
+- Clear module organization following Clean Architecture
+- Environment-based configuration with sensible defaults
+- Hot-reload development server
+- Comprehensive error messages
+- Migration tooling scripts
 
-### Reliability
-- Memory safety from Rust ownership system
-- Thread safety with Send and Sync traits
-- Panic-free error handling with Result<T, E>
-- Compile-time error detection
+### API Consumer Experience
+- Consistent JSON response format
+- Proper HTTP status code usage
+- Clear error messages without internal details
+- Standard authentication flow (JWT)
 
 ## Roadmap
 
-### Current (v1.0)
-- User authentication and management
-- Task management as example domain
-- Basic infrastructure (config, logging, database)
-- Testing infrastructure
+### Phase 1: Core Foundation (Current)
+- Project structure and dependencies
+- Configuration and database setup
+- Basic health endpoint
+- Domain models for authentication
 
-### Future Enhancements
-- Additional example domains
-- Redis caching layer
-- Message queue integration (RabbitMQ/Kafka with lapin or rdkafka)
-- Metrics collection (Prometheus with prometheus-client)
-- Distributed tracing (OpenTelemetry)
-- API versioning strategy
-- GraphQL support option (juniper or async-graphql)
-- gRPC support (tonic)
+### Phase 2: Authentication
+- Registration and login endpoints
+- JWT token generation and validation
+- Password hashing utilities
+- Refresh token flow
+
+### Phase 3: API Polish
+- Request/response validation
+- Error handling standardization
+- CORS and security headers
+- Logging and observability
+
+### Phase 4: DevOps & Documentation
+- Docker and docker-compose setup
+- CI/CD pipeline templates
+- API documentation generation
+- Deployment guides
 
 ## Acceptance Criteria
-- All endpoints must have proper error handling with Result<T, E>
-- Database migrations must be idempotent
-- Tests must cover critical business logic
-- API documentation must be accurate
-- Configuration must be environment-specific
-- Security best practices must be followed
-- Code must compile without warnings
-- All async operations must use Tokio runtime
+
+### Technical Quality
+- All endpoints return proper HTTP status codes
+- Database operations use connection pooling efficiently
+- Passwords hashed with Argon2id
+- JWT tokens have configurable expiration
+- Logs are structured and configurable
+
+### Code Quality
+- Follows Rust idioms and best practices
+- Clean Architecture boundaries respected
+- Unit tests for business logic
+- Integration tests for endpoints
+- No `unwrap()` or `expect()` in production code
+
+### Documentation
+- README with setup instructions
+- API documentation for all endpoints
+- Architecture decision records
+- Deployment and operations guide
