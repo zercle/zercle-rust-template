@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+
+# Documentation
+*.md
+!README.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Docker
+deployments/docker/
+.dockerignore
+
+# Scripts
+scripts/
+
+# CI/CD
+.github/

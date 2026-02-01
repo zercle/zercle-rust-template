@@ -1,4 +1,4 @@
-.PHONY: build run test lint clean migrate-up migrate-down
+.PHONY: build run test lint clean migrate-up migrate-down docker-build docker-run docker-compose-up docker-compose-down docker-compose-logs docker-migrate docker-clean docker-up docker-down
 
 build:
 	cargo build --release
@@ -48,8 +48,29 @@ install-deps:
 watch:
 	cargo watch -x run
 
+# Docker commands
 docker-build:
-	docker build -t zercle-rust-template .
+	docker build -t zercle-rust-template:latest -f deployments/docker/Dockerfile .
 
 docker-run:
-	docker run -p 3000:3000 --env-file .env zercle-rust-template
+	docker run -p 3000:3000 --env-file .env zercle-rust-template:latest
+
+docker-compose-up:
+	docker-compose -f deployments/docker/docker-compose.yml up -d
+
+docker-compose-down:
+	docker-compose -f deployments/docker/docker-compose.yml down
+
+docker-compose-logs:
+	docker-compose -f deployments/docker/docker-compose.yml logs -f
+
+docker-migrate:
+	docker-compose -f deployments/docker/docker-compose.yml --profile migrate run --rm migrate
+
+docker-clean:
+	docker-compose -f deployments/docker/docker-compose.yml down -v
+	docker rmi zercle-rust-template:latest || true
+
+docker-up: docker-compose-up
+
+docker-down: docker-compose-down

@@ -1,51 +1,75 @@
 use std::net::SocketAddr;
-use axum::{routing::get, Router};
-use zercle_rust_template::internal::infrastructure::config::Config;
-use zercle_rust_template::internal::infrastructure::db::connection::Database;
-use zercle_rust_template::internal::infrastructure::db::migrations::Migrations;
-use tracing_subscriber::fmt;
+use std::sync::Arc;
+
+use tokio::signal;
+use tracing::{info, error};
+
+use zercle_rust_template::internal::infrastructure::{
+    config::Config,
+    di::Container,
+    http::create_router,
+    logger::init_logging,
+};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Set up panic hook
     std::panic::set_hook(Box::new(|panic_info| {
         tracing::error!(%panic_info, "Application panicked");
     }));
 
-    fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true)
-        .init();
-
+    // Load configuration
     let config = Config::load()?;
 
-    tracing::info!("Starting Zercle Rust Template application");
-    tracing::info!("Version: {}", env!("CARGO_PKG_VERSION"));
-    tracing::info!("Environment: {}", config.app.env);
+    // Initialize logging
+    init_logging(&config.logging.level, &config.logging.format)?;
 
-    let pool = Database::connect(&config).await?;
-    tracing::info!("Database connected successfully");
+    info!("Starting server...");
 
-    Migrations::run(&pool).await?;
-    tracing::info!("Database migrations completed");
+    // Create DI container (initializes all dependencies)
+    let container = Arc::new(Container::new(config).await?);
 
-    let app = create_app();
-    let addr = format!("{}:{}", config.app.host, config.app.port);
-    let addr: SocketAddr = addr.parse()?;
-    tracing::info!("Server listening on {}", addr);
+    // Create router
+    let app = create_router(container.clone());
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    // Bind to address
+    let addr = SocketAddr::from(([0, 0, 0, 0], container.config.app.port));
+    info!("Server listening on {}", addr);
+
+    // Start server with graceful shutdown
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    info!("Server shutdown complete");
 
     Ok(())
 }
 
-async fn health() -> &'static str {
-    "OK"
-}
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
 
-fn create_app() -> Router {
-    Router::new()
-        .route("/health", get(health))
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("Shutdown signal received, starting graceful shutdown...");
 }
