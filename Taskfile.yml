@@ -1,0 +1,125 @@
+version: '3'
+
+vars:
+  BIN_DIR: target/release
+  BIN_SERVER: '{{.BIN_DIR}}/server'
+  BIN_MIGRATE: '{{.BIN_DIR}}/migrate'
+  COVERAGE_OUT: coverage.lcov
+  COVERAGE_THRESHOLD: '60'
+
+tasks:
+  build:
+    desc: Build the server binary (release). Version/CommitSHA/BuildTime are injected via env so option_env! in src/app.rs picks them up at compile time.
+    env:
+      VERSION: '{{.GIT_VERSION | default "dev"}}'
+      COMMIT_SHA: '{{.GIT_COMMIT | default "unknown"}}'
+      BUILD_TIME: '{{.BUILD_TIME | default "unknown"}}'
+    cmds:
+      - cargo build --release --bin server
+
+  build-all:
+    desc: Build both server and migrate binaries (release).
+    env:
+      VERSION: '{{.GIT_VERSION | default "dev"}}'
+      COMMIT_SHA: '{{.GIT_COMMIT | default "unknown"}}'
+      BUILD_TIME: '{{.BUILD_TIME | default "unknown"}}'
+    cmds:
+      - cargo build --release
+
+  run:
+    desc: Run the server locally (depends on a release build).
+    deps: [build]
+    cmds:
+      - '{{.BIN_SERVER}}'
+
+  test:
+    desc: Run unit tests (default).
+    cmds:
+      - task: test-unit
+
+  test-unit:
+    desc: Run unit tests via cargo (no live infra required).
+    cmds:
+      - cargo test --all-targets
+
+  test-integration:
+    desc: Run integration tests against live postgres + valkey. Bring infra up first with `docker compose up -d postgres valkey`, then run.
+    cmds:
+      - cargo test --all-targets -- --ignored --test-threads=1
+
+  test-e2e:
+    desc: Run the e2e test that boots the full app (wave 7). Requires `docker compose up -d postgres valkey` and migrations applied first (`task migrate-up`).
+    cmds:
+      - cargo test --test e2e -- --ignored
+
+  lint:
+    desc: Run clippy with warnings denied (matches CI).
+    cmds:
+      - cargo clippy --all-targets -- -D warnings
+
+  fmt:
+    desc: Format Rust sources with rustfmt.
+    cmds:
+      - cargo fmt
+
+  fmt-check:
+    desc: Verify formatting without modifying files (matches CI fmt job).
+    cmds:
+      - cargo fmt --all -- --check
+
+  tidy:
+    desc: Refresh the dependency graph (no direct equivalent of `go mod tidy`; `cargo fetch` syncrates Cargo.lock with Cargo.toml).
+    cmds:
+      - cargo fetch
+      - git diff --exit-code Cargo.lock
+
+  verify:
+    desc: Verify the dependency state has no uncommitted diff.
+    cmds:
+      - task: tidy
+      - git diff --exit-code Cargo.lock Cargo.toml
+
+  migrate-up:
+    desc: Run database migrations (sqlx::migrate!; reads DATABASE_URL or DB_* env vars).
+    cmds:
+      - cargo run --bin migrate -- up
+
+  migrate-down:
+    desc: "Roll back one database migration. Override N: `task migrate-down N=3`."
+    cmds:
+      - cargo run --bin migrate -- down {{.N | default "1"}}
+
+  migrate-create:
+    desc: "Create a new migration pair (NNNNNN_name.up.sql + .down.sql). Usage: `task migrate-create NAME=add_users`. Requires sqlx-cli: `cargo install sqlx-cli --features postgres`."
+    cmds:
+      - cmd: sqlx migrate add -r {{.NAME}}
+        ignore_error: true
+      - cmd: echo "If sqlx-cli is not installed, create migrations/<NNNNNN>_<NAME>.{up,down}.sql by hand and bump the sequence number."
+        silent: true
+
+  proto:
+    desc: Regenerate protobuf/gRPC code. Handled automatically by build.rs (tonic-build) on every cargo build; this task is a no-op kept for parity with the Go Taskfile.
+    cmds:
+      - echo "proto: handled by build.rs (tonic-build). Run \`cargo build\` to regenerate."
+
+  docker-build:
+    desc: Build the server container image (multi-stage, musl static, distroless/static final).
+    cmds:
+      - docker build -f Containerfile -t zercle-rust-template:latest .
+
+  docker-build-migrate:
+    desc: Build the migrate container image.
+    cmds:
+      - docker build -f Containerfile.migrate -t zercle-rust-template-migrate:latest .
+
+  cover:
+    desc: "Collect coverage with cargo-llvm-cov and emit HTML + lcov. Requires: `cargo install cargo-llvm-cov` and `rustup component add llvm-tools-preview`. Gate defaults to 60%."
+    env:
+      COVERAGE_THRESHOLD: '{{.COVERAGE_THRESHOLD}}'
+    cmds:
+      - cargo llvm-cov --workspace --all-targets --lcov --output-path {{.COVERAGE_OUT}}
+      - cargo llvm-cov --workspace --all-targets --html
+      - cmd: |
+          total=$(cargo llvm-cov report --summary-only | awk '/^total/{print $2}' | tr -d '%')
+          echo "Coverage: $total%"
+          awk -v t="$total" -v gate="$COVERAGE_THRESHOLD" 'BEGIN { exit !(t+0 < gate+0) }' && { echo "Coverage below ${COVERAGE_THRESHOLD}% threshold"; exit 1; } || true

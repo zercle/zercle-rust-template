@@ -1,0 +1,46 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Output of cargo coverage
+coverage.*
+*.out
+
+# Cargo build artifacts
+target/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Task
+.task/
+
+# Dependency directories
+vendor/
+.kilo/node_modules
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# cargo-dist
+dist/
+
+# cargo test fixtures / generated
+testdata/
+
+# Profiling output
+*.prof

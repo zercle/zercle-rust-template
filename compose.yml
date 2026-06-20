@@ -1,0 +1,156 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:18-alpine
+    container_name: zercle-rust-template-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-app}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - zercle-rust-template
+
+  valkey:
+    image: docker.io/valkey/valkey:9-alpine
+    container_name: zercle-rust-template-valkey
+    command: valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:-}
+    volumes:
+      - valkey_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - zercle-rust-template
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Containerfile.migrate
+    environment:
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-app}
+      DB_SSL_MODE: disable
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - zercle-rust-template
+
+  server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    environment:
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+      APP_NAME: ${APP_NAME:-zercle-rust-template}
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8080
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: 50051
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-app}
+      DB_SSL_MODE: disable
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-zercle-rust-template}
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - zercle-rust-template
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.114.0
+    container_name: zercle-rust-template-otel-collector
+    profiles:
+      - observability
+    command:
+      - --config=/etc/otelcol/config.yaml
+    volumes:
+      - ./deployments/observability/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+    networks:
+      - zercle-rust-template
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.0.1
+    container_name: zercle-rust-template-prometheus
+    profiles:
+      - observability
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    volumes:
+      - ./deployments/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - zercle-rust-template
+
+  grafana:
+    image: docker.io/grafana/grafana:11.4.0
+    container_name: zercle-rust-template-grafana
+    profiles:
+      - observability
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - zercle-rust-template
+
+volumes:
+  postgres_data:
+  valkey_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  zercle-rust-template:
+    driver: bridge

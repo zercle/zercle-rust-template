@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-clippy
+      - name: cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: clippy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-unit
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Build test artifacts
+        # Ensures the coverage run below measures binaries too.
+        run: cargo build --all-targets --locked
+      - name: Run tests with coverage
+        run: |
+          cargo llvm-cov \
+            --workspace \
+            --all-targets \
+            --locked \
+            --lcov --output-path coverage.lcov \
+            --html
+      - name: Coverage gate (60%)
+        env:
+          THRESHOLD: '60'
+        run: |
+          total=$(cargo llvm-cov report --summary-only | awk '/^total/{print $2}' | tr -d '%')
+          echo "Coverage: ${total}%"
+          awk -v t="$total" -v gate="$THRESHOLD" 'BEGIN { exit !(t+0 < gate+0) }' \
+            && { echo "Coverage below ${THRESHOLD}% threshold"; exit 1; } \
+            || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.lcov
+            target/llvm-cov/html/**
+          retention-days: 7
+          if-no-files-found: warn
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit
+    services:
+      postgres:
+        image: docker.io/library/postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zercle_template_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zercle_template_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 10s
+      valkey:
+        image: docker.io/valkey/valkey:9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENVIRONMENT: test
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: zercle_template_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL_MODE: disable
+      VALKEY_HOST: localhost
+      VALKEY_PORT: '6379'
+      VALKEY_DB: '0'
+      RUST_LOG: info,sqlx=warn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-integration
+      - name: Run migrations
+        run: cargo run --locked --bin migrate -- up
+      - name: Run integration tests
+        # Wave 4 / wave 7 #[ignore]-gated tests live under --ignored.
+        run: cargo test --all-targets --locked -- --ignored --test-threads=1
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [clippy, unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-build
+      - name: cargo build --release (both bins)
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_TIME: ${{ github.event.head_commit.timestamp }}
+        run: cargo build --release --locked --bin server --bin migrate
+      - name: docker build (Containerfile)
+        run: docker build -f Containerfile -t zercle-rust-template:ci .
