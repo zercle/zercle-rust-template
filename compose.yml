@@ -23,9 +23,11 @@ services:
   valkey:
     image: docker.io/valkey/valkey:9-alpine
     container_name: zercle-rust-template-valkey
-    command: valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      sh -c "valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru $${VALKEY_PASSWORD:+--requirepass \"$$VALKEY_PASSWORD\"}"
     environment:
       VALKEY_PASSWORD: ${VALKEY_PASSWORD:-}
+      VALKEYCLI_AUTH: ${VALKEY_PASSWORD:-}
     volumes:
       - valkey_data:/data
     ports:

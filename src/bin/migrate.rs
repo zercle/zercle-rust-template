@@ -145,10 +145,15 @@ async fn run_force(pool: &PgPool, version: i64) -> Result<()> {
     // a boolean `success` column; we update the equivalent semantic). We
     // execute the SQL directly because sqlx::Migrator doesn't expose a
     // public `force` helper.
+    //
+    // PostgreSQL forbids `ORDER BY` / `LIMIT` directly inside an `UPDATE`,
+    // so the highest-applied version `<= $1` is computed in a scalar
+    // subquery. The matched row already carries that version, so we only
+    // flip `success = TRUE` and leave `version` untouched.
     pool.execute(
         sqlx::query(
-            "UPDATE _sqlx_migrations SET version = $1, success = TRUE \
-             WHERE version <= $1 ORDER BY version DESC LIMIT 1",
+            "UPDATE _sqlx_migrations SET success = TRUE \
+             WHERE version = (SELECT version FROM _sqlx_migrations WHERE version <= $1 ORDER BY version DESC LIMIT 1)",
         )
         .bind(version),
     )

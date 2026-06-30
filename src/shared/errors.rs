@@ -88,11 +88,21 @@ impl AppError {
         }
     }
 
+    /// Convert to a `tonic::Status` for transport. For the `Internal` variant
+    /// the cause (which may contain raw DB / SQL details) is intentionally
+    /// redacted from the wire message to avoid leaking internals to clients
+    /// (CWE-209); the cause is already logged at the error-construction call
+    /// site. For client-facing variants (`NotFound`, `InvalidInput`) the
+    /// cause is safe and useful, so it is appended to the message.
+    ///
+    /// The gRPC `grpc-status-details-bin` trailer (populated by
+    /// `Status::with_details`) MUST contain a serialized `google.rpc.Status`
+    /// protobuf message; raw text bytes violate the spec and break standard
+    /// clients, so we append the cause to the human-readable message instead.
     pub fn to_grpc_status(&self) -> tonic::Status {
-        // The gRPC `grpc-status-details-bin` trailer (populated by
-        // `Status::with_details`) MUST contain a serialized `google.rpc.Status`
-        // protobuf message; raw text bytes violate the spec and break standard
-        // clients. Append the cause to the human-readable message instead.
+        if matches!(self, Self::Internal { .. }) {
+            return tonic::Status::new(self.grpc_code(), self.message());
+        }
         if let Some(cause) = self.cause() {
             tonic::Status::new(self.grpc_code(), format!("{}: {:#}", self.message(), cause))
         } else {
@@ -193,6 +203,54 @@ mod tests {
         assert_eq!(
             AppError::Internal { cause: None }.message(),
             "internal error"
+        );
+    }
+
+    #[test]
+    fn grpc_status_internal_does_not_leak_cause() {
+        let err = AppError::Internal {
+            cause: Some(anyhow::anyhow!("relation users does not exist")),
+        };
+        let status = err.to_grpc_status();
+        assert_eq!(status.code(), GrpcCode::Internal);
+        assert_eq!(status.message(), "internal error");
+        assert!(
+            !status.message().contains("relation users"),
+            "internal error message leaked SQL detail: {}",
+            status.message()
+        );
+        assert!(
+            !status.message().contains("does not exist"),
+            "internal error message leaked SQL detail: {}",
+            status.message()
+        );
+    }
+
+    #[test]
+    fn grpc_status_invalid_input_appends_cause() {
+        let err = AppError::InvalidInput {
+            cause: Some(anyhow::anyhow!("field email is required")),
+        };
+        let status = err.to_grpc_status();
+        assert_eq!(status.code(), GrpcCode::InvalidArgument);
+        assert!(
+            status.message().contains("field email is required"),
+            "expected cause to appear in InvalidInput message: {}",
+            status.message()
+        );
+    }
+
+    #[test]
+    fn grpc_status_not_found_appends_cause() {
+        let err = AppError::NotFound {
+            cause: Some(anyhow::anyhow!("user 42 not found in db")),
+        };
+        let status = err.to_grpc_status();
+        assert_eq!(status.code(), GrpcCode::NotFound);
+        assert!(
+            status.message().contains("user 42 not found in db"),
+            "expected cause to appear in NotFound message: {}",
+            status.message()
         );
     }
 }

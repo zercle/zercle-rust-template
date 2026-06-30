@@ -125,12 +125,24 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
     let (http_result, grpc_result) = tokio::select! {
         http_res = &mut http_handle => {
             let _ = shutdown_tx.send(());
-            let grpc_res = (&mut grpc_handle).await;
+            let grpc_res = match tokio::time::timeout(shutdown_timeout, &mut grpc_handle).await {
+                Ok(res) => res,
+                Err(_) => {
+                    tracing::warn!(timeout_secs = shutdown_timeout.as_secs(), "grpc graceful shutdown timed out; forcing");
+                    Ok(Ok(()))
+                }
+            };
             (http_res, grpc_res)
         }
         grpc_res = &mut grpc_handle => {
             let _ = shutdown_tx.send(());
-            let http_res = (&mut http_handle).await;
+            let http_res = match tokio::time::timeout(shutdown_timeout, &mut http_handle).await {
+                Ok(res) => res,
+                Err(_) => {
+                    tracing::warn!(timeout_secs = shutdown_timeout.as_secs(), "http graceful shutdown timed out; forcing");
+                    Ok(Ok(()))
+                }
+            };
             (http_res, grpc_res)
         }
     };
