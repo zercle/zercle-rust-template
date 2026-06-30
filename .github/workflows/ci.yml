@@ -133,6 +133,7 @@ jobs:
       DB_USER: postgres
       DB_PASSWORD: postgres
       DB_SSL_MODE: disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/zercle_template_test
       VALKEY_HOST: localhost
       VALKEY_PORT: '6379'
       VALKEY_DB: '0'
