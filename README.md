@@ -4,9 +4,6 @@ Opinionated Rust microservice template — axum (HTTP) + tonic (gRPC) + sqlx (Po
 `redis` (Valkey) + `tracing`/`opentelemetry`, organized as clean-architecture-per-feature with a
 single composition root (`Arc<AppState>`).
 
-Faithful Rust port of [zercle-go-template](../zercle-go-template). See
-`.agents/plans/rust-template-port/canvas.md` and `structure.md` for the full spec.
-
 ## Prerequisites
 
 - **Rust** stable (toolchain pinned via `rust-toolchain.toml`; edition 2024)
@@ -22,10 +19,12 @@ Faithful Rust port of [zercle-go-template](../zercle-go-template). See
 # 1. Start local infra (postgres + valkey; add `observability` profile for OTel + Prometheus + Grafana)
 docker compose up -d postgres valkey
 
-# 2. Apply migrations (wave 5 — `migrate` binary is a stub in wave 1)
-psql -h localhost -U postgres -d app -f migrations/000001_create_items_table.up.sql
+# 2. Apply migrations via the `migrate` binary (reads DATABASE_URL or DB_* env vars)
+cargo run --bin migrate -- up
+# or, with task installed:
+task migrate-up
 
-# 3. Run the server (skeleton in wave 1 — see below)
+# 3. Run the server
 cargo run --bin server
 # or, with task installed:
 task run
@@ -35,22 +34,42 @@ task run
 variables using the explicit leaf-binding table — env names match the Go template exactly
 (`APP_NAME`, `DB_HOST`, `VALKEY_PASSWORD`, …).
 
+For the full containerised stack (migrations as a one-shot `migrate` service, then `server` plus
+optional `observability` profile):
+
+```bash
+docker compose up -d                       # postgres + valkey + migrate + server
+docker compose --profile observability up -d  # + otel-collector, prometheus, grafana
+```
+
+## Migrate subcommands
+
+The `migrate` binary supports the standard sqlx-style subcommands:
+
+| Subcommand            | Description                                                  |
+| --------------------- | ------------------------------------------------------------ |
+| `up`                  | Apply all pending migrations.                                |
+| `down [N]`            | Roll back the most recent `N` migrations (default `1`).      |
+| `force VERSION`       | Force-set the migration version table (recovery / repair).  |
+| `version`             | Print the current applied migration version.                |
+
 ## Directory tree
 
 ```
 zercle-rust-template/
 ├── .agents/                                  # harness state (conductor-owned)
 ├── .github/
-│   └── dependabot.yml                        # weekly cargo + actions + docker updates
+│   ├── dependabot.yml                        # weekly cargo + actions + docker updates
+│   └── workflows/
 ├── proto/
-│   └── example/v1/example.proto              # stub feature gRPC contract
+│   └── example/v1/example.proto              # example feature gRPC contract
 ├── migrations/
 │   ├── 000001_create_items_table.up.sql
 │   └── 000001_create_items_table.down.sql
 ├── src/
 │   ├── main.rs                               # bin `server`: load config → lib::run
 │   ├── lib.rs                                # crate root + module declarations
-│   ├── bin/migrate.rs                        # bin `migrate` (skeleton — wave 5)
+│   ├── bin/migrate.rs                        # bin `migrate`: up / down [N] / force / version
 │   ├── config.rs                             # Config + Load + Validate (decision D5)
 │   ├── app.rs                                # AppState + build() + run() (composition root)
 │   ├── shared/
@@ -60,6 +79,7 @@ zercle-rust-template/
 │   │   └── server/
 │   │       ├── mod.rs                        # Application orchestrator
 │   │       ├── http.rs                       # axum router, middleware stack
+│   │       ├── grpc_interceptor.rs           # tonic unary interceptor (request_id + access log)
 │   │       └── shutdown.rs                   # ordered graceful shutdown
 │   ├── middleware/
 │   │   ├── request_id.rs                     # X-Request-ID propagate / generate
@@ -70,7 +90,7 @@ zercle-rust-template/
 │   │   ├── db.rs                             # PgPool + ping + readiness checker
 │   │   └── valkey.rs                         # redis client + ping + readiness checker
 │   └── features/
-│       └── example/                          # STUB FEATURE — delete to start
+│       └── example/                          # STUB FEATURE — delete to start your project
 │           ├── mod.rs
 │           ├── domain.rs                     # Item entity + Repository/Service traits
 │           ├── dto.rs                        # request / response shapes
@@ -78,16 +98,19 @@ zercle-rust-template/
 │           ├── service.rs                    # use-case impl of Service
 │           ├── handler.rs                    # axum HTTP handlers
 │           └── grpc.rs                       # tonic ExampleService server
-├── tests/                                    # integration + e2e (added in wave 7)
+├── tests/
+│   ├── common/mod.rs                         # shared helpers for integration + e2e tests
+│   ├── example_http.rs                       # integration: HTTP feature flows (--ignored)
+│   └── e2e.rs                                # e2e: boots the full app (--ignored)
 ├── build.rs                                  # tonic-build: compile proto/example/v1/example.proto
 ├── Cargo.toml                                # crate manifest
 ├── Cargo.lock                                # committed for reproducible builds
 ├── rust-toolchain.toml                       # pinned stable + rustfmt + clippy
 ├── rustfmt.toml
-├── Taskfile.yml                              # cargo wrapper (wave 6)
-├── Containerfile                             # multi-stage musl + distroless (wave 6)
-├── Containerfile.migrate                     # migrate image (wave 6)
-├── compose.yml                               # postgres + valkey + observability profile
+├── Taskfile.yml                              # cargo wrapper (build, test, migrate, docker-build, cover)
+├── Containerfile                             # multi-stage musl + distroless (server image)
+├── Containerfile.migrate                     # multi-stage migrate image
+├── compose.yml                               # postgres + valkey + migrate + server + observability profile
 ├── config.yaml                               # server config (same keys as Go template)
 ├── .env.example
 ├── deployments/
@@ -107,6 +130,10 @@ zercle-rust-template/
   `grpc.rs` (tonic) → `mod.rs` (`router()` + `grpc_service()`).
 - **Trait-based ports + mockall mocks**: handlers and tests inject `MockRepository` /
   `MockService`; no real DB required for unit tests.
+- **gRPC unary interceptor** (`src/shared/server/grpc_interceptor.rs`) mirrors the HTTP
+  middleware stack's panic-recovery + access-log guarantees — it recovers handler panics
+  into `tonic::Status::internal` and emits one structured access log per unary call.
+  OTel tracing for gRPC (including streams) is provided by `Server::trace_fn`.
 - **Typed errors**: each feature defines a `domain::Error` enum (`thiserror`) and a
   `From<domain::Error> for AppError` impl registered in the feature's `mod.rs`. The shared
   `AppError` enum maps to both `StatusCode` (axum) and `tonic::Code` at the boundary — no
@@ -118,11 +145,11 @@ zercle-rust-template/
   tonic `Server::shutdown` → `PgPool::close` → `ConnectionManager` drop → OTel provider flush,
   all bounded by `cfg.app.shutdown_timeout`.
 
-## Removing the stub feature
+## Removing the example feature
 
-`src/features/example/` ships with `//! STUB FEATURE — delete src/features/example to start your
-project.` headers — it's a worked example of the clean-architecture layout. To start a real
-project:
+`src/features/example/` ships with `//! STUB FEATURE — delete src/features/example to start
+your project.` headers — it's a worked example of the clean-architecture layout. To start a
+real project:
 
 ```bash
 rm -rf src/features/example
@@ -134,22 +161,46 @@ sub-module) and update `Cargo.toml` (drop tonic-build if you don't need gRPC).
 ## Testing
 
 ```bash
-cargo test                 # unit tests (config, errors, health — all green in wave 1)
-cargo test --features integration  # integration tests (postgres + valkey required)
+# Unit tests (no infra needed)
+cargo test --all-targets
+# or: task test-unit
+
+# Integration tests (postgres + valkey required; skip cleanly if unreachable)
+docker compose up -d postgres valkey
+cargo test --all-targets -- --ignored --test-threads=1
+# or: task test-integration
+
+# End-to-end test (boots the full app; needs infra + migrations applied)
+task migrate-up
+cargo test --test e2e -- --ignored
+# or: task test-e2e
 ```
 
-The wave 1 skeleton includes unit tests for `config` (yaml parse + validate), `errors` (status /
-code mapping), and `health` (registry semantics). Integration and e2e tests land in wave 7.
+The unit suite covers `config` (yaml parse + validate), `errors` (status / code mapping),
+`health` (registry semantics), and the `migrate` CLI parser. Both integration (`tests/example_http.rs`)
+and e2e (`tests/e2e.rs`) tests are gated behind `--ignored` and skip cleanly when the relevant
+infrastructure is unreachable, so a partial local setup never breaks `cargo test`.
+
+Other quality gates:
+
+```bash
+cargo clippy --all-targets -- -D warnings   # or: task lint
+cargo fmt --all -- --check                  # or: task fmt-check
+cargo llvm-cov --workspace --all-targets    # or: task cover   (requires cargo-llvm-cov)
+```
 
 ## Deployment
 
 - **Local containers**: `docker compose up -d` (add `--profile observability` for OTel +
-  Prometheus + Grafana).
+  Prometheus + Grafana). The compose stack runs the `migrate` service once before the
+  `server` service starts.
 - **Kubernetes**: `kubectl apply -k deployments/kustomize/overlays/development`. The base
   `Deployment` runs the distroless image as non-root with `readOnlyRootFilesystem: true`;
   secrets hold `DB_PASSWORD` / `VALKEY_PASSWORD`.
-- **Container build**: `docker build -f Containerfile -t zercle-rust-template .` (multi-stage
-  `rust:slim` builder → distroless/static non-root final; wave 6).
+- **Container build**:
+  - Server: `task docker-build` (`docker build -f Containerfile -t zercle-rust-template:latest .`)
+  - Migrate: `task docker-build-migrate` (`docker build -f Containerfile.migrate …`)
+  Both are multi-stage (`rust:slim` builder → distroless/static non-root final).
 
 ## Migration from `zercle-go-template`
 
