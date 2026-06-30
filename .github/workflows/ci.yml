@@ -74,14 +74,15 @@ jobs:
       - name: Build test artifacts
         # Ensures the coverage run below measures binaries too.
         run: cargo build --all-targets --locked
-      - name: Run tests with coverage
+      - name: Run tests with coverage (lcov)
         run: |
           cargo llvm-cov \
             --workspace \
             --all-targets \
             --locked \
-            --lcov --output-path coverage.lcov \
-            --html
+            --lcov --output-path coverage.lcov
+      - name: Generate HTML coverage report
+        run: cargo llvm-cov report --html
       - name: Coverage gate (60%)
         env:
           THRESHOLD: '60'
