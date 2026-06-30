@@ -86,12 +86,7 @@ jobs:
       - name: Coverage gate (60%)
         env:
           THRESHOLD: '60'
-        run: |
-          total=$(cargo llvm-cov report --summary-only | awk '/^total/{print $2}' | tr -d '%')
-          echo "Coverage: ${total}%"
-          awk -v t="$total" -v gate="$THRESHOLD" 'BEGIN { exit !(t+0 < gate+0) }' \
-            && { echo "Coverage below ${THRESHOLD}% threshold"; exit 1; } \
-            || true
+        run: cargo llvm-cov report --fail-under-lines "$THRESHOLD"
       - uses: actions/upload-artifact@v7
         with:
           name: coverage-report
