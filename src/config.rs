@@ -174,8 +174,11 @@ impl Config {
     /// decision D5.
     pub fn load() -> anyhow::Result<Self> {
         let mut builder = ::config::Config::builder()
-            .add_source(::config::File::with_name("config").required(false))
-            .add_source(::config::File::with_name(&config_file_override()?).required(false));
+            .add_source(::config::File::with_name("config").required(false));
+
+        if let Some(path) = config_file_override() {
+            builder = builder.add_source(::config::File::with_name(&path).required(false));
+        }
 
         for path in exe_dir_config_candidates() {
             builder = builder.add_source(::config::File::with_name(&path).required(false));
@@ -325,14 +328,9 @@ fn urlencoding(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
-/// Return the absolute path of the `CONFIG_FILE` env override, if any.
-fn config_file_override() -> anyhow::Result<String> {
-    if let Ok(p) = std::env::var("CONFIG_FILE") {
-        if !p.is_empty() {
-            return Ok(p);
-        }
-    }
-    Ok(String::new())
+/// Return the `CONFIG_FILE` env override path, if set and non-empty.
+fn config_file_override() -> Option<String> {
+    std::env::var("CONFIG_FILE").ok().filter(|p| !p.is_empty())
 }
 
 /// Config path to try relative to the running executable's directory.

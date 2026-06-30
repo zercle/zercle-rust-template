@@ -199,6 +199,13 @@ pub fn shutdown(telemetry: Telemetry) {
     if let Err(e) = telemetry.meter_provider.shutdown() {
         tracing::error!(error = %e, "telemetry: meter shutdown failed");
     }
+
+    // Shut down the process-wide global tracer provider registered via
+    // `opentelemetry::global::set_tracer_provider` in `init`, releasing its
+    // resources and flushing any remaining batched exports. (The global meter
+    // provider in opentelemetry 0.27 has no top-level shutdown; the local
+    // `telemetry.meter_provider.shutdown()` above is the only knob.)
+    opentelemetry::global::shutdown_tracer_provider();
 }
 
 /// Render the Prometheus text exposition format for the `/metrics` endpoint.

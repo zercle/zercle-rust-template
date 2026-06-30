@@ -16,6 +16,9 @@ use crate::{config::Config, shared::health::Checker};
 /// Build the Valkey/Redis connection URL from `cfg`.
 ///
 /// Format: `redis://[:password@]host:port/db` (matches `cfg.valkey_addr()` shape).
+/// The password is URL-encoded because production Valkey/Redis passwords often
+/// contain reserved URL characters (`@`, `:`, `#`, `/`, ...) that would otherwise
+/// break URL parsing or authenticate incorrectly.
 fn build_url(cfg: &Config) -> String {
     if cfg.valkey.password.is_empty() {
         format!(
@@ -23,9 +26,11 @@ fn build_url(cfg: &Config) -> String {
             cfg.valkey.host, cfg.valkey.port, cfg.valkey.db
         )
     } else {
+        let encoded_password: String =
+            url::form_urlencoded::byte_serialize(cfg.valkey.password.as_bytes()).collect();
         format!(
             "redis://:{}@{}:{}/{}",
-            cfg.valkey.password, cfg.valkey.host, cfg.valkey.port, cfg.valkey.db
+            encoded_password, cfg.valkey.host, cfg.valkey.port, cfg.valkey.db
         )
     }
 }
@@ -208,6 +213,69 @@ example:
             .unwrap();
         let cfg: Config = settings.try_deserialize().unwrap();
         assert_eq!(build_url(&cfg), "redis://:secret@valkey.local:6379/0");
+    }
+
+    #[test]
+    fn url_with_special_password() {
+        let yaml = r#"
+app:
+  name: t
+  environment: dev
+  host: 0.0.0.0
+  port: 8080
+  shutdown_timeout: 15
+http:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 15
+  write_timeout: 15
+  idle_timeout: 60
+  body_limit: "1M"
+  health_probe_timeout: 5
+grpc:
+  host: 0.0.0.0
+  port: 50051
+db:
+  host: localhost
+  port: 5432
+  name: app
+  user: postgres
+  password: postgres
+  ssl_mode: disable
+  max_conns: 10
+  min_conns: 2
+  max_conn_idle: 1800
+  max_conn_life: 3600
+  connect_timeout: 5
+valkey:
+  host: valkey.local
+  port: 6379
+  password: "p@ss:w/ord#"
+  db: 1
+  connect_timeout: 5
+otel:
+  exporter: none
+  endpoint: ""
+  service_name: t
+  sampling: 1.0
+log:
+  level: info
+  format: json
+example:
+  enabled: true
+  default_page_size: 20
+  max_page_size: 100
+  max_name_length: 255
+"#;
+        let settings = ::config::Config::builder()
+            .add_source(::config::File::from_str(yaml, ::config::FileFormat::Yaml))
+            .build()
+            .unwrap();
+        let cfg: Config = settings.try_deserialize().unwrap();
+        assert_eq!(
+            build_url(&cfg),
+            "redis://:p%40ss%3Aw%2Ford%23@valkey.local:6379/1"
+        );
     }
 
     #[tokio::test]

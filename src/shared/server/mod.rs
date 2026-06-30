@@ -52,14 +52,26 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
     tracing::info!(addr = %http_addr, "http listening");
     tracing::info!(addr = %grpc_addr, "grpc listening");
 
+    // Shared shutdown coordinator: any of (OS signal, HTTP exit, gRPC exit)
+    // triggers graceful shutdown of the other server.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(());
+
+    // Forward OS signals (SIGTERM/SIGINT) into the shutdown channel so a
+    // process-level signal drains both servers.
+    let shutdown_tx_for_signal = shutdown_tx.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = shutdown_tx_for_signal.send(());
+    });
+
     // --- HTTP server (axum) ----------------------------------------------
     let router = http::build_router(state.clone());
     let http_state_for_shutdown = state.clone();
-    let http_signal = shutdown_signal();
+    let mut http_rx = shutdown_rx.clone();
     let http_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
         axum::serve(http_listener, router)
             .with_graceful_shutdown(async move {
-                http_signal.await;
+                let _ = http_rx.changed().await;
                 tracing::info!("http graceful shutdown initiated");
             })
             .await
@@ -85,7 +97,7 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
     let grpc_log_layer = ServiceBuilder::new()
         .layer(grpc_interceptor::GrpcLogRecoverLayer)
         .into_inner();
-    let grpc_signal = shutdown_signal();
+    let mut grpc_rx = shutdown_rx.clone();
     let grpc_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
         TonicServer::builder()
             .layer(grpc_log_layer)
@@ -95,22 +107,42 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
             })
             .add_service(example_grpc)
             .serve_with_shutdown(grpc_socket_addr, async move {
-                grpc_signal.await;
+                let _ = grpc_rx.changed().await;
                 tracing::info!("grpc graceful shutdown initiated");
             })
             .await
             .context("tonic serve")
     });
 
-    // Wait for either a server error or (implicitly) for the caller to drop
-    // `run` after a process-level signal handler triggers. Because we install
-    // per-server shutdown futures that await the same signal, we additionally
-    // wait for an explicit caller-driven shutdown by selecting on the signal
-    // and the two server tasks.
     let shutdown_timeout = cfg.shutdown_timeout();
 
-    let http_result = http_handle.await;
-    let grpc_result = grpc_handle.await;
+    // Wait for either server to exit (error or normal), then signal the other
+    // to drain. We await the JoinHandles by mutable reference so the unselected
+    // branch is cancelled without consuming the handle, leaving it available for
+    // the follow-up `.await` in the completed branch. (tokio::JoinHandle is
+    // Unpin, and tokio::select! pins each branch future internally.)
+    tokio::pin!(http_handle, grpc_handle);
+    let (http_result, grpc_result) = tokio::select! {
+        http_res = &mut http_handle => {
+            let _ = shutdown_tx.send(());
+            let grpc_res = (&mut grpc_handle).await;
+            (http_res, grpc_res)
+        }
+        grpc_res = &mut grpc_handle => {
+            let _ = shutdown_tx.send(());
+            let http_res = (&mut http_handle).await;
+            (http_res, grpc_res)
+        }
+    };
+
+    let http_result = match http_result {
+        Ok(res) => res,
+        Err(join_err) => Err(anyhow::anyhow!("http server task panicked: {join_err}")),
+    };
+    let grpc_result = match grpc_result {
+        Ok(res) => res,
+        Err(join_err) => Err(anyhow::anyhow!("grpc server task panicked: {join_err}")),
+    };
 
     if let Err(e) = &http_result {
         tracing::error!(error = %e, "http server task failed");
@@ -118,10 +150,6 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
     if let Err(e) = &grpc_result {
         tracing::error!(error = %e, "grpc server task failed");
     }
-
-    // If the http server panicked before its graceful shutdown could run,
-    // make sure the gRPC side still drains.
-    drop(shutdown_signal());
 
     // --- Ordered shutdown ------------------------------------------------
     shutdown(
@@ -133,11 +161,9 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
 
     // Surface whichever error is most informative.
     match (http_result, grpc_result) {
-        (Ok(Ok(())), Ok(Ok(()))) => Ok(()),
-        (Ok(Err(e)), _) => Err(e),
-        (_, Ok(Err(e))) => Err(e),
-        (Err(join), _) => Err(anyhow::anyhow!("http server task panicked: {join}")),
-        (_, Err(join)) => Err(anyhow::anyhow!("grpc server task panicked: {join}")),
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(e), _) => Err(e),
+        (_, Err(e)) => Err(e),
     }
 }
 

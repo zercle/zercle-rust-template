@@ -89,15 +89,15 @@ impl AppError {
     }
 
     pub fn to_grpc_status(&self) -> tonic::Status {
-        let mut s = tonic::Status::new(self.grpc_code(), self.message());
+        // The gRPC `grpc-status-details-bin` trailer (populated by
+        // `Status::with_details`) MUST contain a serialized `google.rpc.Status`
+        // protobuf message; raw text bytes violate the spec and break standard
+        // clients. Append the cause to the human-readable message instead.
         if let Some(cause) = self.cause() {
-            s = tonic::Status::with_details(
-                self.grpc_code(),
-                self.message(),
-                axum::body::Bytes::from(format!("{:#}", cause)),
-            );
+            tonic::Status::new(self.grpc_code(), format!("{}: {:#}", self.message(), cause))
+        } else {
+            tonic::Status::new(self.grpc_code(), self.message())
         }
-        s
     }
 
     pub fn cause(&self) -> Option<&anyhow::Error> {
