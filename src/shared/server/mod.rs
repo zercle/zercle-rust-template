@@ -3,6 +3,7 @@
 //! Mirrors `internal/shared/server/{shutdown,grpc}.go` (structure.md §14, canvas row 28).
 //! See [`run`] for the top-level entry point used by [`crate::app::run`].
 
+pub mod grpc_interceptor;
 pub mod http;
 pub mod shutdown;
 
@@ -11,6 +12,13 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, Result};
 use tokio::task::JoinHandle;
 use tonic::transport::Server as TonicServer;
+use tower::ServiceBuilder;
+
+/// 4 MiB cap on incoming + outgoing gRPC message bodies. Matches Go's
+/// `grpc.MaxRecvMsgSize(4*1024*1024)` and `grpc.MaxSendMsgSize(4*1024*1024)`
+/// in `internal/shared/server/grpc.go` (Go defaults to 4 MiB anyway, but
+/// setting it explicitly makes the limit visible at the call site).
+const GRPC_MESSAGE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
 
 use crate::{
     app::AppState,
@@ -59,10 +67,32 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
     });
 
     // --- gRPC server (tonic) ---------------------------------------------
-    let example_grpc = grpc_server(GrpcServer::new(state.example_service.clone()));
+    //
+    // Observability parity with the Go template's
+    // `grpc.StatsHandler(otelgrpc.NewServerHandler())` is achieved via
+    // `trace_fn`, which attaches a `tracing::Span` to each call. The
+    // `tracing-opentelemetry` layer installed in `shared::telemetry` then
+    // exports those spans over OTLP, so OTel sees one span per gRPC call
+    // without pulling a new crate. The unary logging + panic-recovery
+    // interceptor (`grpc_interceptor::GrpcLogRecoverLayer`) is the
+    // functional equivalent of the Go unary interceptor. Stream RPCs
+    // receive the tracing span but no panic-recovery wrapper (tonic 0.12's
+    // `Interceptor` trait only covers unary; this is the documented
+    // acceptable gap).
+    let example_grpc = grpc_server(GrpcServer::new(state.example_service.clone()))
+        .max_decoding_message_size(GRPC_MESSAGE_SIZE_LIMIT)
+        .max_encoding_message_size(GRPC_MESSAGE_SIZE_LIMIT);
+    let grpc_log_layer = ServiceBuilder::new()
+        .layer(grpc_interceptor::GrpcLogRecoverLayer)
+        .into_inner();
     let grpc_signal = shutdown_signal();
     let grpc_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
         TonicServer::builder()
+            .layer(grpc_log_layer)
+            .trace_fn(|req| {
+                let method = req.uri().path();
+                tracing::info_span!("grpc", method = %method, otel.kind = "server", otel.status_code = tracing::field::Empty)
+            })
             .add_service(example_grpc)
             .serve_with_shutdown(grpc_socket_addr, async move {
                 grpc_signal.await;

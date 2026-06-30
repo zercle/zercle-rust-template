@@ -3835,6 +3835,7 @@ dependencies = [
  "axum 0.8.9",
  "config",
  "futures",
+ "http",
  "humantime",
  "hyper",
  "mockall",

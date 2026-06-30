@@ -60,7 +60,11 @@ impl ServiceImpl {
 impl Service for ServiceImpl {
     async fn create(&self, name: String) -> Result<Item, Error> {
         let name = name.trim();
-        if name.is_empty() || name.len() > self.max_name_length {
+        // Mirror Go's `utf8.RuneCountInString(name) > maxNameLength`: count
+        // Unicode scalar values (chars), not UTF-8 bytes, so multi-byte
+        // names (e.g. CJK, Thai, emoji) follow the documented 255-rune cap
+        // rather than failing on raw byte length.
+        if name.is_empty() || name.chars().count() > self.max_name_length {
             return Err(Error::InvalidName);
         }
         let now = OffsetDateTime::now_utc();
@@ -124,6 +128,33 @@ mod tests {
         let svc = ServiceImpl::new(repo, 20, 100, 255);
         let big = "a".repeat(256);
         assert_eq!(svc.create(big).await.unwrap_err(), Error::InvalidName);
+    }
+
+    #[tokio::test]
+    async fn create_accepts_multibyte_name_within_rune_cap() {
+        // 200 Thai "ช" (U+0E0A, 3 UTF-8 bytes each = 600 bytes) would be
+        // rejected by a byte-length check, but must pass under rune-count
+        // matching Go's `utf8.RuneCountInString`. Cap is 255 runes.
+        let mut mock = MockRepository::new();
+        mock.expect_create().returning(|_| Ok(()));
+        let svc = ServiceImpl::new(Arc::new(mock), 20, 100, 255);
+        let name = "ช".repeat(200);
+        assert_eq!(name.len(), 600, "sanity: 3 bytes per Thai char");
+        let item = svc.create(name).await.unwrap();
+        assert_eq!(item.name.chars().count(), 200);
+    }
+
+    #[tokio::test]
+    async fn create_rejects_multibyte_name_over_rune_cap() {
+        // 256 emoji 🎉 (U+1F389, 4 UTF-8 bytes each = 1024 bytes) — must
+        // be rejected because 256 > 255 rune cap (the 4 MiB-byte-count
+        // version would also reject, but the rune-count version is the
+        // parity contract with Go).
+        let repo = Arc::new(MockRepository::new());
+        let svc = ServiceImpl::new(repo, 20, 100, 255);
+        let name = "🎉".repeat(256);
+        assert_eq!(name.len(), 1024, "sanity: 4 bytes per emoji");
+        assert_eq!(svc.create(name).await.unwrap_err(), Error::InvalidName);
     }
 
     #[tokio::test]
