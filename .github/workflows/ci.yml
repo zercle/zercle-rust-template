@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 15
     needs: fmt
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 20
     needs: clippy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, llvm-tools-preview
@@ -81,7 +81,7 @@ jobs:
           awk -v t="$total" -v gate="$THRESHOLD" 'BEGIN { exit !(t+0 < gate+0) }' \
             && { echo "Coverage below ${THRESHOLD}% threshold"; exit 1; } \
             || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: |
@@ -132,7 +132,7 @@ jobs:
       VALKEY_DB: '0'
       RUST_LOG: info,sqlx=warn
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -151,7 +151,7 @@ jobs:
     timeout-minutes: 20
     needs: [clippy, unit]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
