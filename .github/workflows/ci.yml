@@ -37,6 +37,11 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -53,6 +58,11 @@ jobs:
     needs: clippy
     steps:
       - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, llvm-tools-preview
@@ -133,6 +143,11 @@ jobs:
       RUST_LOG: info,sqlx=warn
     steps:
       - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -152,6 +167,11 @@ jobs:
     needs: [clippy, unit]
     steps:
       - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
