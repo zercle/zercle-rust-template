@@ -74,7 +74,7 @@ reqwest = { version = "0.12", features = ["json"] }
 tower = { version = "0.5", features = ["util"] }
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.14"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
