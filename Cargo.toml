@@ -51,7 +51,7 @@ validator = { version = "0.18", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "registry"] }
 opentelemetry = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", features = ["trace", "metrics", "http-proto", "reqwest-client"] }
 opentelemetry-prometheus = "0.27"
 prometheus = "0.13"
