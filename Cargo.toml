@@ -33,7 +33,7 @@ http = "1"
 
 # gRPC
 tonic = { version = "0.12", features = ["tls"] }
-prost = "0.13"
+prost = "0.14"
 
 # DB
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
