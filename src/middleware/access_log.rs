@@ -1,7 +1,7 @@
 //! Per-request access log middleware.
 //!
 //! Mirrors `internal/shared/middleware/access_log.go` (structure.md §9). Emits one
-//! `tracing::info!` per request with `request_id`, `method`, `path`, `status`, `latency`.
+//! `tracing::info!` per request with `request_id`, `method`, `path`, `status`, `latency_us`.
 //!
 //! The request id is read from the request extensions (populated by the upstream
 //! [`crate::middleware::request_id`] middleware).
@@ -27,14 +27,14 @@ pub async fn middleware(req: Request, next: Next) -> Response {
 
     let response = next.run(req).await;
     let status = response.status().as_u16();
-    let elapsed = start.elapsed();
+    let latency_us = start.elapsed().as_micros() as u64;
 
     info!(
         request_id = %request_id,
         method = %method,
         path = %path,
         status = status,
-        latency = ?elapsed,
+        latency_us,
         "http request"
     );
 
@@ -128,7 +128,7 @@ mod tests {
             s.contains("\"method\":\"GET\""),
             "method field missing: {s}"
         );
-        assert!(s.contains("latency"), "latency field missing: {s}");
+        assert!(s.contains("latency_us"), "latency_us field missing: {s}");
     }
 
     #[tokio::test]

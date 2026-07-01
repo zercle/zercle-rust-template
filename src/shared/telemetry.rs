@@ -105,14 +105,14 @@ pub fn init(cfg: &Config) -> Result<Telemetry, TelemetryError> {
 
 /// Resolve the OTLP traces endpoint, mirroring Go `tracer.go`'s `/v1/traces` suffix logic.
 fn resolve_traces_endpoint(endpoint: &str) -> Result<String, TelemetryError> {
-    let trimmed = endpoint.trim();
+    let trimmed = endpoint.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return Err(TelemetryError::MissingEndpoint);
     }
     let normalized = if trimmed.ends_with("/v1/traces") {
         trimmed.to_string()
     } else {
-        format!("{}/v1/traces", trimmed.trim_end_matches('/'))
+        format!("{trimmed}/v1/traces")
     };
     // Validate by parsing — the otel exporter accepts opaque URLs but we want a fail-fast.
     url::Url::parse(&normalized)
@@ -339,6 +339,9 @@ example:
 
         let r3 = resolve_traces_endpoint("http://localhost:4318/v1/traces").expect("ok");
         assert_eq!(r3, "http://localhost:4318/v1/traces");
+
+        let r4 = resolve_traces_endpoint("http://localhost:4318/v1/traces/").expect("ok");
+        assert_eq!(r4, "http://localhost:4318/v1/traces");
     }
 
     #[test]

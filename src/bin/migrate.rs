@@ -119,23 +119,37 @@ async fn run_up(pool: &PgPool) -> Result<()> {
 }
 
 async fn run_down(pool: &PgPool, count: i64) -> Result<()> {
-    // Walk back `count` versions by repeatedly calling `undo` at the previous
-    // version. This is sqlx's equivalent of golang-migrate's `Steps(-count)`.
-    for _ in 0..count {
-        let current = current_version(pool).await?;
-        let target = match current {
-            Some(v) => v.checked_sub(1),
-            None => None,
-        };
-        let Some(target) = target else {
-            println!("no migrations to undo");
-            return Ok(());
-        };
-        MIGRATOR
-            .undo(pool, target)
-            .await
-            .with_context(|| format!("undo migration to version {target}"))?;
-    }
+    // Resolve the target version from the known migration set, then issue a
+    // single `undo` call. sqlx's `Migrator::undo(pool, target)` reverts every
+    // applied migration with `version > target`, so computing the version
+    // `count` steps below the current one lets us roll back in one transaction
+    // instead of an N+1 query/undo loop.
+    let current = current_version(pool).await?;
+    let Some(current_v) = current else {
+        println!("no migrations to undo");
+        return Ok(());
+    };
+
+    let mut known_versions: Vec<i64> = MIGRATOR.iter().map(|m| m.version).collect();
+    known_versions.sort_unstable();
+
+    let target = if let Some(idx) = known_versions.iter().position(|&v| v == current_v) {
+        if (idx as i64) < count {
+            0
+        } else {
+            known_versions[idx - count as usize]
+        }
+    } else {
+        // Current version isn't in the known set (e.g. a migration file was
+        // removed); fall back to arithmetic on the version number.
+        current_v.saturating_sub(count)
+    };
+
+    MIGRATOR
+        .undo(pool, target)
+        .await
+        .with_context(|| format!("undo migration to version {target}"))?;
+
     print_version(pool).await
 }
 

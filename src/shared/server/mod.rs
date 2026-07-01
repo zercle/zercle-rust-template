@@ -212,9 +212,10 @@ pub async fn shutdown(state: &AppState, telemetry: Telemetry, shutdown_timeout: 
     }
     tracing::info!("pg pool closed");
 
-    // Valkey: `ConnectionManager` doesn't expose an explicit close; dropping
-    // the last instance is enough. We discard the handle from the state.
-    drop(state.valkey.clone());
+    // Valkey: `ConnectionManager` doesn't expose an explicit close API; the
+    // connection is released automatically when the main `AppState` (held via
+    // `Arc` in `run`) is dropped at process exit. There is no explicit close
+    // to perform here.
     tracing::info!("valkey connection released");
 
     // Telemetry flush + provider shutdown.
