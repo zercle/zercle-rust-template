@@ -39,7 +39,7 @@ prost = "0.13"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 
 # Cache (Valkey = Redis protocol)
-redis = { version = "0.27", features = ["tokio-rustls-comp", "connection-manager"] }
+redis = { version = "1.2", features = ["tokio-rustls-comp", "connection-manager"] }
 
 # Config + validation
 config = "0.14"
