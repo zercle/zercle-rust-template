@@ -12,197 +12,174 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write
-  pull-requests: read
 
 env:
-  RUST_VERSION: "1.88.0"
-  POSTGRES_VERSION: "18"
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
 
 jobs:
-  lint:
-    name: Lint
+  fmt:
+    name: Format check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          components: clippy, rustfmt
-
-      - name: Run clippy linter
-        run: make clippy
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
-
-      - name: Run cargo audit
-        run: cargo audit --format sarif -o results.sarif
-
-      - name: Upload audit results to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: results.sarif
-          category: "/cargo-audit"
-
-  format:
-    name: Check Format
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
 
-      - name: Check code formatting
-        run: make fmt-check
-
-  generate:
-    name: Code Generation
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: fmt
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-clippy
+      - name: cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
 
-      - name: Install sqlc
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: clippy
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-unit
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Build test artifacts
+        # Ensures the coverage run below measures binaries too.
+        run: cargo build --all-targets --locked
+      - name: Run tests with coverage (lcov)
         run: |
-          cargo install sqlc
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          cargo llvm-cov \
+            --workspace \
+            --all-targets \
+            --locked \
+            --lcov --output-path coverage.lcov
+      - name: Generate HTML coverage report
+        run: cargo llvm-cov report --html
+      - name: Coverage gate (60%)
+        env:
+          THRESHOLD: '60'
+        run: cargo llvm-cov report --fail-under-lines "$THRESHOLD"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: |
+            coverage.lcov
+            target/llvm-cov/html/**
+          retention-days: 7
+          if-no-files-found: warn
 
-      - name: Generate code
-        run: make db-generate
-
-      - name: Check for uncommitted changes
-        run: |
-          git diff --exit-code || (echo "Generated code is out of date. Run 'make db-generate' and commit the changes."; exit 1)
-
-  test-unit:
-    name: Unit Tests
+  integration:
+    name: Integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit
+    services:
+      postgres:
+        image: docker.io/library/postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zercle_template_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zercle_template_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 10s
+      valkey:
+        image: docker.io/valkey/valkey:9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENVIRONMENT: test
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: zercle_template_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL_MODE: disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/zercle_template_test
+      VALKEY_HOST: localhost
+      VALKEY_PORT: '6379'
+      VALKEY_DB: '0'
+      RUST_LOG: info,sqlx=warn
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Run unit tests
-        run: make test-unit
-
-  test-integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Set up PostgreSQL
-        uses: harmon758/postgresql-action@v1
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
         with:
-          postgresql version: ${{ env.POSTGRES_VERSION }}
-          postgresql db: zercle_test
-          postgresql user: postgres
-          postgresql password: postgres
-
+          shared-key: ${{ runner.os }}-integration
+      - name: Run migrations
+        run: cargo run --locked --bin migrate -- up
       - name: Run integration tests
-        run: make test-integration
-
-  test-coverage:
-    name: Test Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Run tests with coverage
-        run: make test-coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./tarpaulin-report/cobertura.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
+        # Wave 4 / wave 7 #[ignore]-gated tests live under --ignored.
+        run: cargo test --all-targets --locked -- --ignored --test-threads=1
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, format, generate, test-unit, test-integration, security]
+    timeout-minutes: 20
+    needs: [clippy, unit]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Build application
-        run: make build-release
-
-      - name: Upload binary artifacts
-        uses: actions/upload-artifact@v4
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          name: binary
-          path: target/release/zercle-rust-template
-          retention-days: 7
-
-  docker:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    needs: [lint, format, generate, test-unit, test-integration, security]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        run: |
-          docker build -t zercle-rust-template:test -f deployments/docker/Dockerfile .
-          docker images zercle-rust-template:test
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-build
+      - name: cargo build --release (both bins)
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_TIME: ${{ github.event.head_commit.timestamp }}
+        run: cargo build --release --locked --bin server --bin migrate
+      - name: docker build (Containerfile)
+        run: docker build -f Containerfile -t zercle-rust-template:ci .

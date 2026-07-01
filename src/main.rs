@@ -1,113 +1,54 @@
-//! Main entry point for the Zercle Rust Template application
+//! Server binary entry point.
 //!
-//! This module sets up the application infrastructure including:
-//! - Logging/tracing configuration
-//! - Configuration loading
-//! - Database connection and migrations
-//! - HTTP server initialization
-//! - Graceful shutdown handling
+//! Loads and validates config, then delegates to [`zercle_rust_template::run`]
+//! which builds [`AppState`](crate::app::AppState), starts the HTTP and gRPC
+//! servers, and orchestrates the ordered graceful shutdown.
 
-use anyhow::{bail, Context, Result};
-use std::panic;
-use zercle_rust_template::app::App;
-use zercle_rust_template::config::Settings;
+use std::process::ExitCode;
 
-/// Main entry point for the application
-///
-/// This function:
-/// 1. Initializes tracing/logging
-/// 2. Loads configuration
-/// 3. Connects to the database
-/// 4. Runs migrations
-/// 5. Builds the application
-/// 6. Starts the HTTP server
-///
-/// # Returns
-/// Result indicating success or error
-///
-/// # Errors
-/// This function will return an error if:
-/// - Configuration cannot be loaded
-/// - Database connection fails
-/// - Migrations fail
-/// - Server fails to start
+use zercle_rust_template::config::Config;
+
+/// Compile-time build metadata. Overridden by the build system via
+/// `option_env!` so the binary runs without extra build flags.
+const VERSION: &str = match option_env!("VERSION") {
+    Some(v) => v,
+    None => "dev",
+};
+const COMMIT_SHA: &str = match option_env!("COMMIT_SHA") {
+    Some(v) => v,
+    None => "unknown",
+};
+const BUILD_TIME: &str = match option_env!("BUILD_TIME") {
+    Some(v) => v,
+    None => "unknown",
+};
+
 #[tokio::main]
-async fn main() -> Result<()> {
-    // Set up panic hook for better error messages
-    panic::set_hook(Box::new(|panic_info| {
-        tracing::error!(%panic_info, "Application panicked");
-    }));
+async fn main() -> ExitCode {
+    eprintln!("server {VERSION} ({COMMIT_SHA}) built {BUILD_TIME} starting");
 
-    // Initialize tracing/subscriber
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true)
-        .init();
+    let cfg = match Config::load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("failed to load config: {e:#}");
+            return ExitCode::FAILURE;
+        }
+    };
 
-    tracing::info!("Starting Zercle Rust Template application");
-    tracing::info!("Version: {}", env!("CARGO_PKG_VERSION"));
-
-    // Load configuration
-    let settings = Settings::load()?;
-    tracing::info!(
-        "Environment: {}, Host: {}, Port: {}",
-        settings.server.env,
-        settings.server.host,
-        settings.server.port
-    );
-
-    // Log configuration details (without sensitive data)
-    tracing::info!(
-        "Database: {}@{}:{}/{}",
-        settings.database.user,
-        settings.database.host,
-        settings.database.port,
-        settings.database.name
-    );
-    tracing::info!("JWT expiration: {} hours", settings.jwt.expiration_hours);
-
-    // Build and run the application
-    let app = App::new()
-        .await
-        .context("Failed to initialize application")?;
-
-    tracing::info!("Server listening on {}", app.server_addr());
-
-    // Run the server (this will block until shutdown)
-    if let Err(e) = app.run_server().await {
-        bail!("Server failed to run: {}", e);
+    if let Err(e) = validator::Validate::validate(&cfg).map_err(|e| anyhow::anyhow!(e)) {
+        eprintln!("invalid config: {e:#}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(e) = cfg.validate_cross() {
+        eprintln!("invalid config: {e:#}");
+        return ExitCode::FAILURE;
     }
 
-    tracing::info!("Application shutdown complete");
-    Ok(())
-}
-
-/// Alternative entry point for running with custom settings
-///
-/// This is useful for testing or when you need to pass custom settings.
-///
-/// # Arguments
-/// * `settings` - Custom settings to use instead of loading from environment/file
-///
-/// # Returns
-/// Result indicating success or error
-pub async fn run_with_settings(_settings: Settings) -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    tracing::info!("Starting application with custom settings");
-
-    let app = App::new()
-        .await
-        .context("Failed to initialize application")?;
-
-    if let Err(e) = app.run_server().await {
-        bail!("Server failed to run: {}", e);
+    match zercle_rust_template::run_with_config(cfg).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("server stopped with error: {e:#}");
+            ExitCode::FAILURE
+        }
     }
-
-    Ok(())
 }

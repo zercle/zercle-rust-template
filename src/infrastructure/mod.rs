@@ -1,9 +1,7 @@
-pub mod config;
-pub mod db;
-pub mod http;
-pub mod middleware;
+//! Infrastructure adapters: PostgreSQL pool + Valkey client + health checkers.
 
-pub use config::*;
-pub use db::{connection, migrations, postgres_repository, Database, RepositoryError};
-pub use http::*;
-pub use middleware::*;
+pub mod db;
+pub mod valkey;
+
+pub use db::{PgChecker, new_pool};
+pub use valkey::{ValkeyChecker, new_client};

@@ -1,511 +1,216 @@
 # zercle-rust-template
 
-A production-ready Rust template project using the Axum framework with PostgreSQL, featuring Domain-Driven Design (DDD) architecture and comprehensive infrastructure setup.
-
-## Table of Contents
-
-- [Project Overview](#project-overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Development](#development)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Project Overview
-
-`zercle-rust-template` is a robust, production-ready Rust application template designed for building scalable web APIs. It combines the power of Rust's type safety with a clean, modular architecture that promotes maintainability and testability.
-
-### Key Characteristics
-
-- **Framework**: Axum 0.7 with Tower HTTP services
-- **Database**: PostgreSQL with sqlx ORM and migrations
-- **Architecture**: Domain-Driven Design (DDD) with clear separation of concerns
-- **Authentication**: JWT-based authentication with Argon2 password hashing
-- **Configuration**: Environment-based YAML configuration management
-- **Runtime**: Async Tokio runtime for high-performance concurrency
-
-## Features
-
-### Core Features
-
-- **RESTful API**: Clean HTTP API with proper routing and handlers
-- **Authentication**: JWT token-based auth with secure password hashing
-- **Authorization**: Middleware-based auth with rate limiting
-- **Database**: PostgreSQL with connection pooling and health checks
-- **Validation**: Request validation using the Validator crate
-
-### Infrastructure
-
-- **Logging**: Structured logging with tracing and JSON formatting
-- **CORS**: Configurable Cross-Origin Resource Sharing
-- **Rate Limiting**: Request throttling to prevent abuse
-- **Compression**: Brotli compression for responses
-- **Graceful Shutdown**: Proper signal handling for clean shutdowns
-
-### Developer Experience
-
-- **Docker Support**: Containerized deployment with Docker Compose
-- **Makefile**: Comprehensive build automation
-- **Testing**: Unit and integration test suite
-- **Code Quality**: Clippy linter, rustfmt, and cargo-audit
-- **Hot Reload**: cargo-watch for development
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Application Layer                         │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                      HTTP Server (Axum)                    │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────────┐  │  │
-│  │  │ Routes  │ │Handlers │ │Middleware│ │   OpenAPI/Swagger│ │  │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        Infrastructure Layer                      │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────────────┐  │
-│  │    HTTP      │ │   Database   │ │    Configuration       │  │
-│  │  (axum/tower)│ │   (sqlx)     │ │    (config crate)      │  │
-│  └──────────────┘ └──────────────┘ └────────────────────────┘  │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────────────┐  │
-│  │  Middleware  │ │  Migrations  │ │    Logging/Tracing     │  │
-│  │(CORS, Auth)  │ │  (sqlx-cli)  │ │    (tracing)           │  │
-│  └──────────────┘ └──────────────┘ └────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                          Domain Layer                            │
-│  ┌────────────────┐ ┌────────────────┐ ┌─────────────────────┐  │
-│  │    Entities    │ │   Repositories │ │     Use Cases       │  │
-│  │  (User, Task)  │ │   (Interface)  │ │  (Business Logic)   │  │
-│  └────────────────┘ └────────────────┘ └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Layer Descriptions
-
-- **Domain Layer**: Pure Rust business logic without external dependencies
-- **Infrastructure Layer**: Database, HTTP servers, and external services
-- **Application Layer**: Orchestration of domain logic and infrastructure
+Opinionated Rust microservice template — axum (HTTP) + tonic (gRPC) + sqlx (PostgreSQL) +
+`redis` (Valkey) + `tracing`/`opentelemetry`, organized as clean-architecture-per-feature with a
+single composition root (`Arc<AppState>`).
 
 ## Prerequisites
 
-- **Rust**: Version 1.75 or higher (see [`rust-toolchain.toml`](rust-toolchain.toml))
-- **PostgreSQL**: Version 14 or higher
-- **Docker & Docker Compose**: For containerized development
-- **sqlx-cli**: For database migrations (`cargo install sqlx-cli`)
-- **Make**: For build automation
+- **Rust** stable (toolchain pinned via `rust-toolchain.toml`; edition 2024)
+- **protoc** 3.15+ (for the proto compile in `build.rs` — Rust gRPC generation)
+- **PostgreSQL 18+** and **Valkey 9+** (or use `compose.yml`)
+- **Docker / Podman** for local infra (optional — `cargo` works directly against the host)
+- **Task** (`go-task`) — optional wrapper around `cargo` commands; install from
+  <https://taskfile.dev>. If absent, run the `cargo` commands directly.
 
-## Installation
-
-### 1. Clone and Setup
-
-```bash
-git clone <repository-url>
-cd zercle-rust-template
-```
-
-### 2. Install Dependencies
+## Quick start
 
 ```bash
-# Using make
-make setup
+# 1. Start local infra (postgres + valkey; add `observability` profile for OTel + Prometheus + Grafana)
+docker compose up -d postgres valkey
 
-# Or manually
-cargo fetch
-sqlx-cli install
+# 2. Apply migrations via the `migrate` binary (reads DATABASE_URL or DB_* env vars)
+cargo run --bin migrate -- up
+# or, with task installed:
+task migrate-up
+
+# 3. Run the server
+cargo run --bin server
+# or, with task installed:
+task run
 ```
 
-### 3. Configure Environment
+`cargo run --bin server` reads `config.yaml` from the working directory and overlays environment
+variables using the explicit leaf-binding table — env names match the Go template exactly
+(`APP_NAME`, `DB_HOST`, `VALKEY_PASSWORD`, …).
+
+For the full containerised stack (migrations as a one-shot `migrate` service, then `server` plus
+optional `observability` profile):
 
 ```bash
-# Copy example environment file
-cp .env.example .env
-
-# Edit configuration
-nano .env
+docker compose up -d                       # postgres + valkey + migrate + server
+docker compose --profile observability up -d  # + otel-collector, prometheus, grafana
 ```
 
-### 4. Setup Database
+## Migrate subcommands
+
+The `migrate` binary supports the standard sqlx-style subcommands:
+
+| Subcommand            | Description                                                  |
+| --------------------- | ------------------------------------------------------------ |
+| `up`                  | Apply all pending migrations.                                |
+| `down [N]`            | Roll back the most recent `N` migrations (default `1`).      |
+| `force VERSION`       | Force-set the migration version table (recovery / repair).  |
+| `version`             | Print the current applied migration version.                |
+
+## Directory tree
+
+```
+zercle-rust-template/
+├── .agents/                                  # harness state (conductor-owned)
+├── .github/
+│   ├── dependabot.yml                        # weekly cargo + actions + docker updates
+│   └── workflows/
+├── proto/
+│   └── example/v1/example.proto              # example feature gRPC contract
+├── migrations/
+│   ├── 000001_create_items_table.up.sql
+│   └── 000001_create_items_table.down.sql
+├── src/
+│   ├── main.rs                               # bin `server`: load config → lib::run
+│   ├── lib.rs                                # crate root + module declarations
+│   ├── bin/migrate.rs                        # bin `migrate`: up / down [N] / force / version
+│   ├── config.rs                             # Config + Load + Validate (decision D5)
+│   ├── app.rs                                # AppState + build() + run() (composition root)
+│   ├── shared/
+│   │   ├── errors.rs                         # AppError + IntoResponse + tonic mapper
+│   │   ├── health.rs                         # Checker trait + Registry
+│   │   ├── telemetry.rs                      # tracing + OTel + Prometheus init
+│   │   └── server/
+│   │       ├── mod.rs                        # Application orchestrator
+│   │       ├── http.rs                       # axum router, middleware stack
+│   │       ├── grpc_interceptor.rs           # tonic unary interceptor (request_id + access log)
+│   │       └── shutdown.rs                   # ordered graceful shutdown
+│   ├── middleware/
+│   │   ├── request_id.rs                     # X-Request-ID propagate / generate
+│   │   ├── access_log.rs                     # one structured access log per request
+│   │   ├── recover.rs                        # panic → 500
+│   │   └── cors.rs                           # tower-http CORS from config
+│   ├── infrastructure/
+│   │   ├── db.rs                             # PgPool + ping + readiness checker
+│   │   └── valkey.rs                         # redis client + ping + readiness checker
+│   └── features/
+│       └── example/                          # STUB FEATURE — delete to start your project
+│           ├── mod.rs
+│           ├── domain.rs                     # Item entity + Repository/Service traits
+│           ├── dto.rs                        # request / response shapes
+│           ├── repository.rs                 # sqlx impl of Repository
+│           ├── service.rs                    # use-case impl of Service
+│           ├── handler.rs                    # axum HTTP handlers
+│           └── grpc.rs                       # tonic ExampleService server
+├── tests/
+│   ├── common/mod.rs                         # shared helpers for integration + e2e tests
+│   ├── example_http.rs                       # integration: HTTP feature flows (--ignored)
+│   └── e2e.rs                                # e2e: boots the full app (--ignored)
+├── build.rs                                  # tonic-build: compile proto/example/v1/example.proto
+├── Cargo.toml                                # crate manifest
+├── Cargo.lock                                # committed for reproducible builds
+├── rust-toolchain.toml                       # pinned stable + rustfmt + clippy
+├── rustfmt.toml
+├── Taskfile.yml                              # cargo wrapper (build, test, migrate, docker-build, cover)
+├── Containerfile                             # multi-stage musl + distroless (server image)
+├── Containerfile.migrate                     # multi-stage migrate image
+├── compose.yml                               # postgres + valkey + migrate + server + observability profile
+├── config.yaml                               # server config (same keys as Go template)
+├── .env.example
+├── deployments/
+│   ├── kustomize/{base,overlays/development}/
+│   └── observability/{otel-collector-config.yaml,prometheus.yml}
+└── LICENSE
+```
+
+## Architecture overview
+
+- **Composition root = `Arc<AppState>`** (no runtime DI container — idiomatic Rust; see
+  `canvas.md ## Assumptions` row 9 / decision D2). `app::build` constructs every dependency
+  (config, telemetry, `PgPool`, `ConnectionManager`, health registry, feature services), wraps
+  the result in `Arc`, and hands it to axum `State` and tonic request extensions.
+- **Clean architecture per feature**: `domain` (entities + `Repository`/`Service` traits + error
+  enum) → `repository` (sqlx adapter) → `service` (use-case impl) → `handler` (axum) /
+  `grpc.rs` (tonic) → `mod.rs` (`router()` + `grpc_service()`).
+- **Trait-based ports + mockall mocks**: handlers and tests inject `MockRepository` /
+  `MockService`; no real DB required for unit tests.
+- **gRPC unary interceptor** (`src/shared/server/grpc_interceptor.rs`) mirrors the HTTP
+  middleware stack's panic-recovery + access-log guarantees — it recovers handler panics
+  into `tonic::Status::internal` and emits one structured access log per unary call.
+  OTel tracing for gRPC (including streams) is provided by `Server::trace_fn`.
+- **Typed errors**: each feature defines a `domain::Error` enum (`thiserror`) and a
+  `From<domain::Error> for AppError` impl registered in the feature's `mod.rs`. The shared
+  `AppError` enum maps to both `StatusCode` (axum) and `tonic::Code` at the boundary — no
+  string matching.
+- **Env binding = explicit leaf table** (decision D5): the `config` crate's default `_`
+  separator would collide with SCREAMING_SNAKE names, so we port the Go `leafBindings()` table
+  verbatim and override each leaf from `std::env` after loading the yaml.
+- **Graceful shutdown**: SIGTERM/SIGINT triggers `axum::serve(...).with_graceful_shutdown` →
+  tonic `Server::shutdown` → `PgPool::close` → `ConnectionManager` drop → OTel provider flush,
+  all bounded by `cfg.app.shutdown_timeout`.
+
+## Removing the example feature
+
+`src/features/example/` ships with `//! STUB FEATURE — delete src/features/example to start
+your project.` headers — it's a worked example of the clean-architecture layout. To start a
+real project:
 
 ```bash
-# Run migrations
-make db-migrate
-
-# Seed with sample data (optional)
-make db-seed
+rm -rf src/features/example
 ```
 
-## Quick Start
-
-### Development Mode
-
-```bash
-# Start with default environment (dev)
-make run
-
-# Or with specific environment
-ENV=local make run
-```
-
-### Docker Mode
-
-```bash
-# Build and start all services
-make docker-up
-
-# View logs
-make docker-logs
-
-# Stop services
-make docker-down
-```
-
-### Verify Installation
-
-```bash
-# Health check
-curl http://localhost:3000/health
-
-# API should respond with service status
-```
-
-## Development
-
-### Available Make Commands
-
-```bash
-# Build
-make build          # Debug build
-make build-release  # Optimized release build
-
-# Run
-make run            # Run application
-make run-dev        # Run in dev mode
-make run-local      # Run in local mode
-make run-uat        # Run in UAT mode
-make run-prod       # Run in production mode
-
-# Database
-make db-migrate     # Run migrations
-make db-seed        # Seed database
-make db-reset       # Reset database
-make db-generate    # Generate sqlc code
-
-# Testing
-make test           # Run all tests
-make test-unit      # Unit tests only
-make test-integration # Integration tests only
-make test-coverage  # Tests with coverage
-
-# Code Quality
-make fmt            # Format code
-make fmt-check      # Check formatting
-make clippy         # Run linter
-make lint           # Run all linters
-make audit          # Security audit
-
-# Development
-make watch          # Hot reload development
-make watch-test     # Watch and test
-make doc            # Generate docs
-make help           # Show all commands
-```
-
-### Development Scripts
-
-```bash
-# Run development server with hot reload
-./scripts/run-dev.sh
-
-# Seed database with test data
-./scripts/seed-db.sh
-```
-
-### Database Migrations
-
-Migrations are located in [`sqlc/migrations/`](sqlc/migrations/) and can be managed with:
-
-```bash
-# Create new migration
-cargo sqlx migrate add -r <migration_name>
-
-# Run migrations
-make db-migrate
-
-# Rollback migrations
-cargo sqlx migrate revert
-```
+Then edit `src/lib.rs` to drop `pub mod features;` (or keep `features` and add your own
+sub-module) and update `Cargo.toml` (drop tonic-build if you don't need gRPC).
 
 ## Testing
 
-### Running Tests
+```bash
+# Unit tests (no infra needed)
+cargo test --all-targets
+# or: task test-unit
+
+# Integration tests (postgres + valkey required; skip cleanly if unreachable)
+docker compose up -d postgres valkey
+cargo test --all-targets -- --ignored --test-threads=1
+# or: task test-integration
+
+# End-to-end test (boots the full app; needs infra + migrations applied)
+task migrate-up
+cargo test --test e2e -- --ignored
+# or: task test-e2e
+```
+
+The unit suite covers `config` (yaml parse + validate), `errors` (status / code mapping),
+`health` (registry semantics), and the `migrate` CLI parser. Both integration (`tests/example_http.rs`)
+and e2e (`tests/e2e.rs`) tests are gated behind `--ignored` and skip cleanly when the relevant
+infrastructure is unreachable, so a partial local setup never breaks `cargo test`.
+
+Other quality gates:
 
 ```bash
-# Run all tests
-make test
-
-# Unit tests only
-make test-unit
-
-# Integration tests only
-make test-integration
-
-# With coverage report
-make test-coverage
-```
-
-### Test Structure
-
-```
-tests/
-├── integration/
-│   └── api_test.rs      # API integration tests
-└── unit/
-    ├── entity_validation_test.rs  # Entity validation tests
-    └── usecase_test.rs    # Use case tests
-```
-
-### Example Test
-
-```rust
-#[tokio::test]
-async fn test_create_user() {
-    let app = spawn_app().await;
-    let response = app.post_users("/users", &body).await;
-    assert_eq!(response.status(), 201);
-}
+cargo clippy --all-targets -- -D warnings   # or: task lint
+cargo fmt --all -- --check                  # or: task fmt-check
+cargo llvm-cov --workspace --all-targets    # or: task cover   (requires cargo-llvm-cov)
 ```
 
 ## Deployment
 
-### Docker Deployment
+- **Local containers**: `docker compose up -d` (add `--profile observability` for OTel +
+  Prometheus + Grafana). The compose stack runs the `migrate` service once before the
+  `server` service starts.
+- **Kubernetes**: `kubectl apply -k deployments/kustomize/overlays/development`. The base
+  `Deployment` runs the distroless image as non-root with `readOnlyRootFilesystem: true`;
+  secrets hold `DB_PASSWORD` / `VALKEY_PASSWORD`.
+- **Container build**:
+  - Server: `task docker-build` (`docker build -f Containerfile -t zercle-rust-template:latest .`)
+  - Migrate: `task docker-build-migrate` (`docker build -f Containerfile.migrate …`)
+  Both are multi-stage (`rust:slim` builder → distroless/static non-root final).
 
-#### Production Build
+## Migration from `zercle-go-template`
 
-```bash
-# Build Docker image
-make docker-build
-
-# Start production services
-docker-compose -f deployments/docker/docker-compose.yml up -d
-```
-
-#### Environment Variables
-
-Configure via environment variables or [`configs/prod.yaml`](configs/prod.yaml):
-
-```yaml
-server:
-  port: 3000
-  host: "0.0.0.0"
-  env: "prod"
-
-database:
-  host: "postgres"
-  port: 5432
-  user: "postgres"
-  password: "${DB_PASSWORD}"
-  dbname: "postgres"
-
-jwt:
-  secret: "${JWT_SECRET}"
-  expiration: 3600
-```
-
-### Kubernetes Deployment
-
-The Docker image can be deployed to any Kubernetes cluster:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: zercle-rust-api
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: zercle-rust-api
-  template:
-    spec:
-      containers:
-      - name: api
-        image: zercle-rust-template:latest
-        ports:
-        - containerPort: 3000
-```
-
-### Health Checks
-
-The application exposes the following health endpoints:
-
-- `/health` - Overall health check
-- `/health/live` - Liveness probe
-- `/health/ready` - Readiness probe
-
-## Project Structure
-
-```
-zercle-rust-template/
-├── Cargo.toml              # Project manifest
-├── Cargo.lock              # Locked dependencies
-├── Makefile                # Build automation
-├── rust-toolchain.toml     # Rust version specification
-├── sqlc.yaml              # SQLx configuration
-│
-├── configs/               # Configuration files
-│   ├── dev.yaml          # Development settings
-│   ├── local.yaml        # Local environment
-│   ├── prod.yaml         # Production settings
-│   └── uat.yaml          # User acceptance testing
-│
-├── deployments/           # Docker configurations
-│   └── docker/
-│       ├── Dockerfile
-│       └── docker-compose.yml
-│
-├── scripts/               # Utility scripts
-│   ├── run-dev.sh
-│   └── seed-db.sh
-│
-├── sqlc/                  # Database layer
-│   ├── migrations/       # Database migrations
-│   └── queries/          # SQL queries
-│
-├── src/                   # Source code
-│   ├── main.rs           # Application entry point
-│   ├── lib.rs            # Library root
-│   ├── app.rs            # Application builder
-│   │
-│   ├── config/           # Configuration
-│   │   ├── mod.rs
-│   │   └── settings.rs
-│   │
-│   ├── domain/           # Business logic
-│   │   ├── entities/     # Domain entities
-│   │   │   ├── user.rs
-│   │   │   └── task.rs
-│   │   ├── repositories/ # Repository interfaces
-│   │   │   ├── user_repository.rs
-│   │   │   └── task_repository.rs
-│   │   └── usecases/     # Business logic
-│   │       ├── user_usecase.rs
-│   │       └── task_usecase.rs
-│   │
-│   └── infrastructure/   # External services
-│       ├── config/
-│       ├── db/           # Database implementation
-│       │   ├── connection.rs
-│       │   ├── migrations.rs
-│       │   └── postgres_repository.rs
-│       ├── http/         # HTTP server
-│       │   ├── handlers.rs
-│       │   ├── routes.rs
-│       │   └── server.rs
-│       └── middleware/   # HTTP middleware
-│           ├── auth.rs
-│           ├── cors.rs
-│           ├── logging.rs
-│           └── rate_limit.rs
-│
-└── tests/                # Test suite
-    ├── integration/
-    └── unit/
-```
-
-## Configuration
-
-### Configuration Files
-
-| File | Environment | Description |
-|------|-------------|-------------|
-| [`configs/dev.yaml`](configs/dev.yaml) | Development | Development settings with debug logging |
-| [`configs/local.yaml`](configs/local.yaml) | Local | Local development environment |
-| [`configs/uat.yaml`](configs/uat.yaml) | UAT | User acceptance testing |
-| [`configs/prod.yaml`](configs/prod.yaml) | Production | Production settings |
-
-### Configuration Structure
-
-```yaml
-server:
-  port: 3000
-  host: "0.0.0.0"
-  env: "dev"
-
-database:
-  host: "localhost"
-  port: 5432
-  user: "postgres"
-  password: "postgres"
-  dbname: "postgres"
-  max_conns: 25
-  min_conns: 5
-
-jwt:
-  secret: "your-jwt-secret"
-  expiration: 3600
-
-logging:
-  level: "debug"
-  format: "json"
-
-cors:
-  allowed_origins:
-    - "http://localhost:3000"
-
-rate_limit:
-  requests: 100
-  window: 60
-```
-
-### Environment Variables
-
-Override configuration with environment variables:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SERVER_ENV` | Environment name | `dev` |
-| `SERVER_PORT` | HTTP server port | `3000` |
-| `DB_HOST` | Database host | `localhost` |
-| `DB_PORT` | Database port | `5432` |
-| `DB_USER` | Database user | `postgres` |
-| `DB_PASSWORD` | Database password | `postgres` |
-| `DB_NAME` | Database name | `postgres` |
-| `JWT_SECRET` | JWT signing secret | - |
-| `LOG_LEVEL` | Logging level | `info` |
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Standards
-
-- Follow Rust idioms and best practices
-- Run `make lint` before committing
-- Write tests for new functionality
-- Update documentation as needed
-- Use conventional commit messages
+- All env var names are identical (`APP_NAME`, `DB_HOST`, `OTEL_TRACES_SAMPLER_ARG`, …) — point
+  your existing config maps / secrets at the new workload without changes.
+- All config keys are identical — `config.yaml` round-trips.
+- gRPC service definitions are byte-faithful (`proto/example/v1/example.proto`); existing
+  protobuf clients work unchanged.
+- Health endpoints (`/healthz`, `/readyz`) and metrics path (`/metrics`) match.
 
 ## License
 
-This project is licensed under the MIT License - see the [`LICENSE.md`](LICENSE.md) file for details.
-
----
-
-**Built with ❤️ using Rust, Axum, and PostgreSQL**
+MIT — see `LICENSE`.
