@@ -130,6 +130,14 @@ where
                 Poll::Ready(Ok(response))
             }
             Poll::Ready(Ok(Err(err))) => {
+                // Transport/infrastructure-level error from the inner tower service.
+                // NOTE: tonic encodes application gRPC statuses (NotFound,
+                // InvalidArgument, PermissionDenied, ...) in the *response
+                // headers/trailers*, so they are surfaced as `Ok(Response)` and
+                // logged by `log_completion` above — at `warn` for non-zero
+                // `grpc-status`. This `Err` arm therefore only fires for genuine
+                // transport failures (e.g. connection errors), which warrant
+                // `error` level. Do not lower this to `warn`.
                 let latency_us = this.start.elapsed().as_micros() as u64;
                 tracing::error!(
                     method = %this.method,

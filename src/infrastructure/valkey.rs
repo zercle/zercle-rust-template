@@ -20,19 +20,14 @@ use crate::{config::Config, shared::health::Checker};
 /// contain reserved URL characters (`@`, `:`, `#`, `/`, ...) that would otherwise
 /// break URL parsing or authenticate incorrectly.
 fn build_url(cfg: &Config) -> String {
-    if cfg.valkey.password.is_empty() {
-        format!(
-            "redis://{}:{}/{}",
-            cfg.valkey.host, cfg.valkey.port, cfg.valkey.db
-        )
-    } else {
-        let encoded_password: String =
-            url::form_urlencoded::byte_serialize(cfg.valkey.password.as_bytes()).collect();
-        format!(
-            "redis://:{}@{}:{}/{}",
-            encoded_password, cfg.valkey.host, cfg.valkey.port, cfg.valkey.db
-        )
+    let mut url = url::Url::parse("redis://localhost").expect("valid base url");
+    let _ = url.set_host(Some(&cfg.valkey.host));
+    let _ = url.set_port(Some(cfg.valkey.port));
+    if !cfg.valkey.password.is_empty() {
+        let _ = url.set_password(Some(&cfg.valkey.password));
     }
+    url.set_path(&cfg.valkey.db.to_string());
+    url.to_string()
 }
 
 /// Build a connected [`ConnectionManager`] from `cfg` and PING it before returning.

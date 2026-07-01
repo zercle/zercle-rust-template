@@ -14,6 +14,7 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 
 use axum::{
     Router,
+    extract::State,
     http::{HeaderValue, StatusCode, header},
     middleware::from_fn,
     response::{IntoResponse, Response},
@@ -70,35 +71,16 @@ pub fn build_router(state: Arc<crate::app::AppState>) -> Router {
         None
     };
 
-    // Shared routes — each closure captures its own clone of `Arc<AppState>`,
-    // so the parent router can stay state-less and `nest` the example feature
-    // router (whose own state type is unrelated to ours).
-    let health_state = state.clone();
-    let ready_state = state.clone();
-    let metrics_state = state.clone();
-
+    // Shared routes — use idiomatic Axum `State` extraction so the parent
+    // router stays state-less and can `nest` the example feature router
+    // (whose own state type is unrelated to ours). State is a tuple of
+    // `Arc<AppState>` plus the probe timeout; handlers destructure it via
+    // the `State` extractor.
     let shared = Router::new()
-        .route(
-            "/healthz",
-            get(move || {
-                let state = health_state.clone();
-                async move { healthz_handler(state, probe_timeout).await }
-            }),
-        )
-        .route(
-            "/readyz",
-            get(move || {
-                let state = ready_state.clone();
-                async move { readyz_handler(state, probe_timeout).await }
-            }),
-        )
-        .route(
-            "/metrics",
-            get(move || {
-                let state = metrics_state.clone();
-                async move { metrics_handler(state).await }
-            }),
-        );
+        .route("/healthz", get(healthz_handler))
+        .route("/readyz", get(readyz_handler))
+        .route("/metrics", get(metrics_handler))
+        .with_state((state.clone(), probe_timeout));
 
     // Mount the example feature under `/api/v1`.
     let app_router = shared.nest(
@@ -115,7 +97,9 @@ pub fn build_router(state: Arc<crate::app::AppState>) -> Router {
     }
 }
 
-async fn healthz_handler(state: Arc<crate::app::AppState>, probe_timeout: Duration) -> Response {
+async fn healthz_handler(
+    State((state, probe_timeout)): State<(Arc<crate::app::AppState>, Duration)>,
+) -> Response {
     let registry = state.health.clone();
     let result = tokio::time::timeout(probe_timeout, registry.live()).await;
     match result {
@@ -131,7 +115,9 @@ async fn healthz_handler(state: Arc<crate::app::AppState>, probe_timeout: Durati
     }
 }
 
-async fn readyz_handler(state: Arc<crate::app::AppState>, probe_timeout: Duration) -> Response {
+async fn readyz_handler(
+    State((state, probe_timeout)): State<(Arc<crate::app::AppState>, Duration)>,
+) -> Response {
     let registry = state.health.clone();
     let result = tokio::time::timeout(probe_timeout, registry.ready()).await;
     match result {
@@ -149,7 +135,9 @@ async fn readyz_handler(state: Arc<crate::app::AppState>, probe_timeout: Duratio
     }
 }
 
-async fn metrics_handler(_state: Arc<crate::app::AppState>) -> Response {
+async fn metrics_handler(
+    State((_state, _probe_timeout)): State<(Arc<crate::app::AppState>, Duration)>,
+) -> Response {
     let registry = metrics_registry();
     let body = render_metrics(&registry);
     Response::builder()

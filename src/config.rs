@@ -219,16 +219,12 @@ impl Config {
     }
 
     pub fn db_conn_string(&self) -> String {
-        let url = url::Url::parse(&format!(
-            "postgres://{}:{}@{}:{}/{}",
-            urlencoding(&self.db.user),
-            urlencoding(&self.db.password),
-            self.db.host,
-            self.db.port,
-            self.db.name,
-        ))
-        .expect("static postgres URL is always parseable");
-        let mut url = url;
+        let mut url = url::Url::parse("postgres://localhost").expect("valid base url");
+        let _ = url.set_username(&self.db.user);
+        let _ = url.set_password(Some(&self.db.password));
+        let _ = url.set_host(Some(&self.db.host));
+        let _ = url.set_port(Some(self.db.port));
+        url.set_path(&self.db.name);
         url.query_pairs_mut()
             .append_pair("sslmode", &self.db.ssl_mode);
         url.to_string()
@@ -322,10 +318,6 @@ impl Config {
         }
         Ok(())
     }
-}
-
-fn urlencoding(s: &str) -> String {
-    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
 /// Return the `CONFIG_FILE` env override path, if set and non-empty.
@@ -482,6 +474,22 @@ example:
         let s = cfg.db_conn_string();
         assert!(s.contains("sslmode=disable"), "got {s}");
         assert!(s.contains("postgres://postgres:postgres@localhost:5432/app"));
+    }
+
+    #[test]
+    fn db_conn_string_percent_encodes_special_chars() {
+        // Override db user/password in the sample yaml to contain characters that
+        // must be percent-encoded per RFC 3986 in the URI userinfo component.
+        // The `url` crate's `set_username`/`set_password` use RFC-3986 encoding
+        // (so space -> %20), unlike the form-urlencoded `+` encoding we replaced.
+        let yaml = sample_yaml()
+            .replace("user: postgres", "user: \"u ser\"")
+            .replace("password: postgres", "password: \"p@ss/w:ord\"");
+        let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
+        let s = cfg.db_conn_string();
+        assert!(s.contains("u%20ser"), "got {s}");
+        assert!(s.contains("p%40ss%2Fw%3Aord"), "got {s}");
+        assert!(s.contains("sslmode="), "got {s}");
     }
 
     #[test]

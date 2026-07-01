@@ -129,6 +129,7 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
                 Ok(res) => res,
                 Err(_) => {
                     tracing::warn!(timeout_secs = shutdown_timeout.as_secs(), "grpc graceful shutdown timed out; forcing");
+                    grpc_handle.abort();
                     Ok(Ok(()))
                 }
             };
@@ -140,6 +141,7 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
                 Ok(res) => res,
                 Err(_) => {
                     tracing::warn!(timeout_secs = shutdown_timeout.as_secs(), "http graceful shutdown timed out; forcing");
+                    http_handle.abort();
                     Ok(Ok(()))
                 }
             };
