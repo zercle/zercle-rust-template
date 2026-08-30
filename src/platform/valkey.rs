@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use redis::{Client, aio::ConnectionManager};
 
-use crate::{config::Config, shared::health::Checker};
+use crate::{platform::config::Config, platform::health::Checker};
 
 /// Build the Valkey/Redis connection URL from `cfg`.
 ///

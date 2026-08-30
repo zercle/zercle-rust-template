@@ -11,7 +11,7 @@ use std::time::Instant;
 use axum::{extract::Request, middleware::Next, response::Response};
 use tracing::info;
 
-use crate::middleware::request_id::RequestId;
+use crate::platform::middleware::request_id::RequestId;
 
 /// The underlying axum middleware function. Wrap with [`axum::middleware::from_fn`] (or use
 /// [`layer`]).

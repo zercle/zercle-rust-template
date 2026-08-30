@@ -25,7 +25,7 @@ use opentelemetry_sdk::{
 use prometheus::{Encoder, Registry, TextEncoder};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, prelude::*};
 
-use crate::config::Config;
+use crate::platform::config::Config;
 
 /// Errors raised by [`init`]. Kept narrow so callers can convert into the shared
 /// `AppError::Internal` without losing the cause chain.

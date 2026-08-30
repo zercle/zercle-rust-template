@@ -1,13 +1,16 @@
 //! STUB FEATURE — delete src/features/example to start your project.
 //!
-//! axum HTTP handlers for the example feature.
+//! axum HTTP driving adapter for the example feature (Go
+//! `adapter/in/http/handler.go` parity).
 //!
-//! Routes (mounted under `/api/v1` by the server shell, wave 5):
+//! Routes (nested under `/api/v1` by the feature's `di`):
 //!   `POST   /items`       → 201 + `ItemResponse`
 //!   `GET    /items`       → 200 + `ListItemsResponse`  (query: `limit`, `offset`)
-//!   `GET    /items/:id`   → 200 + `ItemResponse`
+//!   `GET    /items/{id}`  → 200 + `ItemResponse`
 //!
-//! Generic over `S: domain::Service` so tests inject a `MockService`.
+//! Handlers bind the feature's contract types directly, validate, and call the
+//! application's inbound port — they never map to or from domain entities.
+//! Generic over `S: Service` so tests inject a `MockService`.
 
 use std::sync::Arc;
 
@@ -18,14 +21,11 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use uuid::Uuid;
-
-use crate::features::example::domain::{Error, Service};
-use crate::features::example::dto::{
-    CreateItemRequest, ItemResponse, ListItemsRequest, ListItemsResponse,
-};
-use crate::shared::errors::AppError;
 use validator::Validate;
+
+use crate::features::example::application::Service;
+use crate::features::example::contract::{CreateItemRequest, ListItemsRequest, ListItemsResponse};
+use crate::platform::errors::AppError;
 
 /// Handler holds the service as `Arc<S>`; the generic keeps the test seam clean.
 pub struct Handler<S: Service + ?Sized> {
@@ -47,8 +47,8 @@ impl<S: Service + ?Sized> Handler<S> {
     }
 }
 
-/// Build the axum router for the example feature. The caller is expected to
-/// merge this under `/api/v1` (wave 5).
+/// Build the axum router for the example feature. The caller (the feature's
+/// `di`) nests this under `/api/v1`.
 pub fn routes<S>(service: Arc<S>) -> Router
 where
     S: Service + ?Sized + Send + Sync + 'static,
@@ -71,8 +71,8 @@ where
     req.validate().map_err(|e| AppError::InvalidInput {
         cause: Some(anyhow::Error::msg(e.to_string())),
     })?;
-    let item = h.service.create(req.name).await.map_err(AppError::from)?;
-    Ok((StatusCode::CREATED, Json(ItemResponse::from_item(&item))))
+    let resp = h.service.create(req).await.map_err(AppError::from)?;
+    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 async fn list<S>(
@@ -85,43 +85,39 @@ where
     req.validate().map_err(|e| AppError::InvalidInput {
         cause: Some(anyhow::Error::msg(e.to_string())),
     })?;
-    let items = h
-        .service
-        .list(req.limit.unwrap_or(0), req.offset.unwrap_or(0))
-        .await
-        .map_err(AppError::from)?;
-    Ok(Json(ListItemsResponse::from(items)))
+    let resp = h.service.list(req).await.map_err(AppError::from)?;
+    Ok(Json(resp))
 }
 
 async fn get_one<S>(
     State(h): State<Handler<S>>,
     Path(id): Path<String>,
-) -> Result<Json<ItemResponse>, AppError>
+) -> Result<Json<crate::features::example::contract::ItemResponse>, AppError>
 where
     S: Service + ?Sized,
 {
-    let id = Uuid::parse_str(&id).map_err(|_| AppError::from(Error::InvalidId))?;
-    let item = h.service.get(id).await.map_err(AppError::from)?;
-    Ok(Json(ItemResponse::from_item(&item)))
+    // Malformed ids surface as `domain::Error::InvalidId` from the use case —
+    // both driving adapters share the one validation path.
+    let resp = h.service.get(id).await.map_err(AppError::from)?;
+    Ok(Json(resp))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::example::domain::{Item, MockService};
+    use crate::features::example::application::MockService;
+    use crate::features::example::contract::ItemResponse;
     use axum::body::Body;
     use axum::http::{Request, StatusCode as SC};
     use mockall::predicate::*;
-    use time::OffsetDateTime;
     use tower::ServiceExt;
 
-    fn sample(id: Uuid, name: &str) -> Item {
-        let now = OffsetDateTime::now_utc();
-        Item {
-            id,
+    fn sample_response(id: &str, name: &str) -> ItemResponse {
+        ItemResponse {
+            id: id.to_string(),
             name: name.to_string(),
-            created_at: now,
-            updated_at: now,
+            created_at: "1970-01-01T00:00:00Z".to_string(),
+            updated_at: "1970-01-01T00:00:00Z".to_string(),
         }
     }
 
@@ -133,8 +129,13 @@ mod tests {
     async fn post_items_returns_201_on_success() {
         let mut m = MockService::new();
         m.expect_create()
-            .withf(|n| n == "alpha")
-            .returning(|n| Ok(sample(Uuid::nil(), &n)));
+            .withf(|req| req.name == "alpha")
+            .returning(|req| {
+                Ok(sample_response(
+                    "00000000-0000-0000-0000-000000000000",
+                    &req.name,
+                ))
+            });
         let app = router_with(m);
         let resp = app
             .oneshot(
@@ -171,11 +172,15 @@ mod tests {
     #[tokio::test]
     async fn get_items_returns_200_with_payload() {
         let mut m = MockService::new();
-        // Handler forwards query params as-is (0,0 here). Defaults are
-        // applied by the service impl, not exercised in this handler test.
+        // The handler forwards the raw contract request; defaults/clamping are
+        // the use case's job and are covered there.
         m.expect_list()
-            .withf(|l, o| *l == 0 && *o == 0)
-            .returning(|_, _| Ok(vec![sample(Uuid::nil(), "alpha")]));
+            .withf(|req: &ListItemsRequest| req.limit.is_none() && req.offset.is_none())
+            .returning(|_| {
+                Ok(ListItemsResponse {
+                    items: vec![sample_response("id-1", "alpha")],
+                })
+            });
         let app = router_with(m);
         let resp = app
             .oneshot(
@@ -212,13 +217,13 @@ mod tests {
     async fn get_items_by_id_returns_200_on_hit() {
         let mut m = MockService::new();
         m.expect_get()
-            .with(eq(Uuid::nil()))
-            .returning(|_| Ok(sample(Uuid::nil(), "alpha")));
+            .withf(|id| id == "00000000-0000-0000-0000-000000000000")
+            .returning(|id| Ok(sample_response(&id, "alpha")));
         let app = router_with(m);
         let resp = app
             .oneshot(
                 Request::builder()
-                    .uri(format!("/items/{}", Uuid::nil()))
+                    .uri(format!("/items/{}", uuid::Uuid::nil()))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -231,13 +236,12 @@ mod tests {
     async fn get_items_by_id_returns_404_on_missing() {
         let mut m = MockService::new();
         m.expect_get()
-            .with(eq(Uuid::nil()))
-            .returning(|_| Err(Error::NotFound));
+            .returning(|_| Err(crate::features::example::domain::Error::NotFound));
         let app = router_with(m);
         let resp = app
             .oneshot(
                 Request::builder()
-                    .uri(format!("/items/{}", Uuid::nil()))
+                    .uri(format!("/items/{}", uuid::Uuid::nil()))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -248,7 +252,9 @@ mod tests {
 
     #[tokio::test]
     async fn get_items_by_id_returns_400_on_bad_uuid() {
-        let m = MockService::new();
+        let mut m = MockService::new();
+        m.expect_get()
+            .returning(|_| Err(crate::features::example::domain::Error::InvalidId));
         let app = router_with(m);
         let resp = app
             .oneshot(

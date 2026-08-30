@@ -15,7 +15,7 @@ use std::time::Duration;
 use axum::http::{HeaderName, HeaderValue, Method};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
-use crate::config::Config;
+use crate::platform::config::Config;
 
 const DEFAULT_METHODS: &[&str] = &["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"];
 const DEFAULT_HEADERS: &[&str] = &["Origin", "Content-Type", "Accept", "Authorization"];
@@ -98,7 +98,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
-    use crate::config::Config;
+    use crate::platform::config::Config;
 
     fn sample_cfg_with(origins: Vec<String>, methods: Vec<String>, headers: Vec<String>) -> Config {
         let origins_str = if origins.is_empty() {

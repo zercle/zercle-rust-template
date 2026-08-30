@@ -1,6 +1,10 @@
 //! Integration test for the example feature's HTTP routes against a real
 //! Postgres + Valkey pair.
 //!
+//! Exercises the real feature composition path: `features::example::di::register`
+//! (repository → use case → HTTP adapter), with the router mounted exactly as
+//! the application mounts it (nested under `/api/v1`).
+//!
 //! Skips cleanly (`return Ok(())`) when neither backing service is reachable,
 //! so `cargo test --test example_http` is green on a developer machine without
 //! docker-compose running and still exercises the full HTTP path against a
@@ -8,7 +12,6 @@
 
 mod common;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
@@ -17,13 +20,12 @@ use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use zercle_rust_template::config::Config;
-use zercle_rust_template::features::example::{
-    PgRepository, ServiceImpl, http_routes as example_http_routes,
-};
+use zercle_rust_template::features::example::di;
+use zercle_rust_template::platform::config::Config;
 
 /// Happy path + error path against a real Postgres: build a pool, run
-/// migrations, mount the example router, and exercise POST/GET /items.
+/// migrations, mount the feature via its `di`, and exercise
+/// POST/GET `/api/v1/items`.
 #[tokio::test]
 async fn example_http_round_trip() -> anyhow::Result<()> {
     let cfg = match Config::load() {
@@ -60,49 +62,40 @@ async fn example_http_round_trip() -> anyhow::Result<()> {
     // Clean any leftover rows so the GET-count assertion is stable.
     sqlx::query("DELETE FROM items").execute(&pool).await.ok();
 
-    let repo: Arc<dyn zercle_rust_template::features::example::Repository> =
-        Arc::new(PgRepository::new(pool.clone()));
-    let service = Arc::new(ServiceImpl::new(
-        repo,
-        cfg.example.default_page_size as i32,
-        cfg.example.max_page_size as i32,
-        cfg.example.max_name_length as i32,
-    ));
+    let app = di::register(&cfg, pool).http;
 
-    let app = example_http_routes(service);
-
-    // --- Happy path: POST /items → 201 -------------------------------
+    // --- Happy path: POST /api/v1/items → 201 -------------------------
     let resp = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/items")
+                .uri("/api/v1/items")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"name":"alpha"}"#))
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), SC::CREATED, "POST /items happy path");
+    assert_eq!(resp.status(), SC::CREATED, "POST /api/v1/items happy path");
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let created_id = v["id"].as_str().expect("id is a string").to_string();
     assert!(Uuid::parse_str(&created_id).is_ok(), "id is a valid uuid");
     assert_eq!(v["name"], "alpha");
 
-    // --- Happy path: GET /items → 200 + the row we just created ------
+    // --- Happy path: GET /api/v1/items → 200 + the row we just created
     let resp = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/items")
+                .uri("/api/v1/items")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), SC::OK, "GET /items happy path");
+    assert_eq!(resp.status(), SC::OK, "GET /api/v1/items happy path");
     let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let items = v["items"].as_array().unwrap();
@@ -111,26 +104,26 @@ async fn example_http_round_trip() -> anyhow::Result<()> {
         "alpha present in list: {v}"
     );
 
-    // --- GET /items/:id → 200 hit -----------------------------------
+    // --- GET /api/v1/items/:id → 200 hit ------------------------------
     let resp = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/items/{created_id}"))
+                .uri(format!("/api/v1/items/{created_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), SC::OK, "GET /items/:id hit");
+    assert_eq!(resp.status(), SC::OK, "GET /api/v1/items/:id hit");
 
-    // --- POST /items → 400 invalid name (empty) ---------------------
+    // --- POST /api/v1/items → 400 invalid name (empty) ----------------
     let resp = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/items")
+                .uri("/api/v1/items")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"name":""}"#))
                 .unwrap(),
@@ -139,12 +132,12 @@ async fn example_http_round_trip() -> anyhow::Result<()> {
         .unwrap();
     assert_eq!(resp.status(), SC::BAD_REQUEST, "POST empty name");
 
-    // --- GET /items/:id → 404 not found ------------------------------
+    // --- GET /api/v1/items/:id → 404 not found ------------------------
     let resp = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/items/{}", Uuid::nil()))
+                .uri(format!("/api/v1/items/{}", Uuid::nil()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -152,12 +145,12 @@ async fn example_http_round_trip() -> anyhow::Result<()> {
         .unwrap();
     assert_eq!(resp.status(), SC::NOT_FOUND, "GET missing id");
 
-    // --- GET /items/:id → 400 bad uuid -------------------------------
+    // --- GET /api/v1/items/:id → 400 bad uuid -------------------------
     let resp = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/items/not-a-uuid")
+                .uri("/api/v1/items/not-a-uuid")
                 .body(Body::empty())
                 .unwrap(),
         )

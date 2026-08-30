@@ -13,7 +13,7 @@ use std::any::Any;
 use axum::{body::Body, http::Response, response::IntoResponse};
 use tower_http::catch_panic::{CatchPanicLayer, ResponseForPanic};
 
-use crate::shared::errors::AppError;
+use crate::platform::errors::AppError;
 
 /// Inner panic handler that produces the same JSON body as `AppError::Internal.into_response()`.
 #[derive(Clone, Copy, Debug)]

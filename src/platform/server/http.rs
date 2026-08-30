@@ -1,6 +1,8 @@
 //! axum HTTP server builder: middleware stack, shared routes, and feature mount.
 //!
-//! Mirrors `internal/shared/server/http.go` (structure.md §14, canvas row 26).
+//! Mirrors Go `internal/platform/server/http.go`. Feature-agnostic: feature
+//! routers arrive pre-mounted (each feature nests itself under its versioned
+//! prefix) and are merged here with the shared health/metrics routes.
 //!
 //! Middleware order (applied as the outermost layers in the same sequence):
 //! Recover → RequestID → OTel(`TraceLayer`) → AccessLog → CORS → BodyLimit.
@@ -24,19 +26,19 @@ use prometheus::Registry;
 use tower::ServiceBuilder;
 use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 
-use crate::{
-    features::example,
+use crate::platform::{
     middleware::{access_log, cors, recover, request_id},
-    shared::telemetry::metrics_body as render_metrics,
+    telemetry::metrics_body as render_metrics,
 };
 
 const METRICS_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
 const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Build the application router with the full middleware stack and shared routes.
+/// Build the application router with the full middleware stack, shared routes,
+/// and the merged feature routers.
 ///
 /// The returned `Router` is `Send + 'static` and ready for `axum::serve(listener, router)`.
-pub fn build_router(state: Arc<crate::app::AppState>) -> Router {
+pub fn build_router(state: Arc<super::AppState>, api: Router) -> Router {
     let cfg = state.cfg.clone();
 
     let body_limit_bytes = parse_body_limit_bytes(&cfg.http.body_limit);
@@ -72,21 +74,18 @@ pub fn build_router(state: Arc<crate::app::AppState>) -> Router {
     };
 
     // Shared routes — use idiomatic Axum `State` extraction so the parent
-    // router stays state-less and can `nest` the example feature router
-    // (whose own state type is unrelated to ours). State is a tuple of
-    // `Arc<AppState>` plus the probe timeout; handlers destructure it via
-    // the `State` extractor.
+    // router stays state-less. State is a tuple of `Arc<AppState>` plus the
+    // probe timeout; handlers destructure it via the `State` extractor.
     let shared = Router::new()
         .route("/healthz", get(healthz_handler))
         .route("/readyz", get(readyz_handler))
         .route("/metrics", get(metrics_handler))
         .with_state((state.clone(), probe_timeout));
 
-    // Mount the example feature under `/api/v1`.
-    let app_router = shared.nest(
-        "/api/v1",
-        example::http_routes(state.example_service.clone()),
-    );
+    // Feature routers arrive pre-mounted under their versioned prefixes
+    // (e.g. `/api/v1` — see each feature's `di`), so this module never
+    // references feature code.
+    let app_router = shared.merge(api);
 
     let app_router = app_router.layer(middleware_stack);
 
@@ -98,7 +97,7 @@ pub fn build_router(state: Arc<crate::app::AppState>) -> Router {
 }
 
 async fn healthz_handler(
-    State((state, probe_timeout)): State<(Arc<crate::app::AppState>, Duration)>,
+    State((state, probe_timeout)): State<(Arc<super::AppState>, Duration)>,
 ) -> Response {
     let registry = state.health.clone();
     let result = tokio::time::timeout(probe_timeout, registry.live()).await;
@@ -116,7 +115,7 @@ async fn healthz_handler(
 }
 
 async fn readyz_handler(
-    State((state, probe_timeout)): State<(Arc<crate::app::AppState>, Duration)>,
+    State((state, probe_timeout)): State<(Arc<super::AppState>, Duration)>,
 ) -> Response {
     let registry = state.health.clone();
     let result = tokio::time::timeout(probe_timeout, registry.ready()).await;
@@ -136,7 +135,7 @@ async fn readyz_handler(
 }
 
 async fn metrics_handler(
-    State((_state, _probe_timeout)): State<(Arc<crate::app::AppState>, Duration)>,
+    State((_state, _probe_timeout)): State<(Arc<super::AppState>, Duration)>,
 ) -> Response {
     let registry = metrics_registry();
     let body = render_metrics(&registry);

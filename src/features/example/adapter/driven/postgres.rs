@@ -1,6 +1,7 @@
 //! STUB FEATURE — delete src/features/example to start your project.
 //!
-//! sqlx implementation of `domain::Repository`.
+//! sqlx implementation of the example feature's `port::Repository` (driven
+//! adapter; Go `adapter/out/postgres/repository.go` parity).
 //! Uses runtime-checked `sqlx::query_as` (no live DATABASE_URL required at build time).
 //!
 //! Row → domain mapping is unit-tested directly. End-to-end DB tests are gated
@@ -10,9 +11,10 @@ use sqlx::{FromRow, PgPool};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::features::example::domain::{Error, Item, Repository};
+use crate::features::example::domain::{Error, Item};
+use crate::features::example::port::Repository;
 
-/// sqlx implementation of `domain::Repository`.
+/// sqlx implementation of the example feature's `port::Repository`.
 #[derive(Clone)]
 pub struct PgRepository {
     pool: PgPool,
