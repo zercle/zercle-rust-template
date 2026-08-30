@@ -23,8 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt
       - name: cargo fmt --check
@@ -36,20 +38,47 @@ jobs:
     timeout-minutes: 15
     needs: fmt
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           version: "27.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: ${{ runner.os }}-clippy
       - name: cargo clippy
         run: cargo clippy --all-targets --locked -- -D warnings
+
+  architecture:
+    # Executable clean-architecture dependency gates (tests/architecture.rs):
+    # every dependency must point inward; the api facade is outward-only.
+    name: Architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: clippy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "27.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: ${{ runner.os }}-arch
+      - name: Layering rules (dependencies point inward only)
+        run: cargo test --test architecture --locked
 
   unit:
     name: Unit tests
@@ -57,20 +86,22 @@ jobs:
     timeout-minutes: 20
     needs: clippy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           version: "27.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt, clippy, llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: ${{ runner.os }}-unit
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@6a241a1328ca6173d49760e1de6702cd5e52ef94 # cargo-llvm-cov
       - name: Build test artifacts
         # Ensures the coverage run below measures binaries too.
         run: cargo build --all-targets --locked
@@ -85,9 +116,9 @@ jobs:
         run: cargo llvm-cov report --html
       - name: Coverage gate (60%)
         env:
-          THRESHOLD: '60'
+          THRESHOLD: "60"
         run: cargo llvm-cov report --fail-under-lines "$THRESHOLD"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-report
           path: |
@@ -100,7 +131,7 @@ jobs:
     name: Integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: unit
+    needs: [unit, architecture]
     services:
       postgres:
         image: docker.io/library/postgres:18-alpine
@@ -128,51 +159,58 @@ jobs:
     env:
       APP_ENVIRONMENT: test
       DB_HOST: localhost
-      DB_PORT: '5432'
+      DB_PORT: "5432"
       DB_NAME: zercle_template_test
       DB_USER: postgres
       DB_PASSWORD: postgres
       DB_SSL_MODE: disable
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/zercle_template_test
       VALKEY_HOST: localhost
-      VALKEY_PORT: '6379'
-      VALKEY_DB: '0'
+      VALKEY_PORT: "6379"
+      VALKEY_DB: "0"
       RUST_LOG: info,sqlx=warn
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           version: "27.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: ${{ runner.os }}-integration
       - name: Run migrations
         run: cargo run --locked --bin migrate -- up
       - name: Run integration tests
-        # Wave 4 / wave 7 #[ignore]-gated tests live under --ignored.
-        run: cargo test --all-targets --locked -- --ignored --test-threads=1
+        # Full suite against the service containers: the #[ignore]-gated
+        # live-infra tests (db, valkey, adapter roundtrip) plus the
+        # self-skipping HTTP integration test and the e2e server test,
+        # which no longer skip because infra IS reachable here.
+        run: cargo test --all-targets --locked -- --include-ignored --test-threads=1
 
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [clippy, unit]
+    needs: [clippy, unit, architecture]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           version: "27.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: ${{ runner.os }}-build
       - name: cargo build --release (both bins)

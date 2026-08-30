@@ -6,7 +6,7 @@
 
 use std::process::ExitCode;
 
-use zercle_rust_template::config::Config;
+use zercle_rust_template::platform::config::Config;
 
 /// Compile-time build metadata. Overridden by the build system via
 /// `option_env!` so the binary runs without extra build flags.

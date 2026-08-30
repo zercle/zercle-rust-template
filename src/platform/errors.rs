@@ -1,8 +1,12 @@
-//! Shared boundary error type. Mirrors `internal/shared/errors/app_error.go` (structure.md §6).
+//! Shared boundary error type. Mirrors Go `internal/platform/errors`.
 //!
 //! - `AppError::http_status()` → `axum::http::StatusCode`
 //! - `AppError::grpc_code()` → `tonic::Code`
 //! - `impl IntoResponse for AppError` → JSON `{"error": CODE, "message": MSG}` with the status.
+//!
+//! The machine-readable codes are exposed as [`errcodes`] constants and
+//! published outward via `crate::api::v1::errcodes` so other services can
+//! interpret error envelopes without importing server internals.
 
 use axum::{
     Json,
@@ -11,6 +15,21 @@ use axum::{
 };
 use serde::Serialize;
 use tonic::Code as GrpcCode;
+
+/// Stable machine-readable error codes carried on the wire (the HTTP JSON
+/// `error` field). Published outward via `crate::api::v1::errcodes`; feature
+/// domains map their sentinels onto these at the composition edge (each
+/// feature's `di`).
+pub mod errcodes {
+    pub const NOT_FOUND: &str = "NOT_FOUND";
+    pub const INVALID_INPUT: &str = "INVALID_INPUT";
+    pub const UNAUTHORIZED: &str = "UNAUTHORIZED";
+    pub const FORBIDDEN: &str = "FORBIDDEN";
+    pub const CONFLICT: &str = "CONFLICT";
+    pub const CANCELED: &str = "CANCELED";
+    pub const DEADLINE_EXCEEDED: &str = "DEADLINE_EXCEEDED";
+    pub const INTERNAL: &str = "INTERNAL";
+}
 
 /// Shared, transport-agnostic error used at the HTTP / gRPC boundary.
 #[derive(Debug, thiserror::Error)]
@@ -36,14 +55,14 @@ pub enum AppError {
 impl AppError {
     pub fn code(&self) -> &'static str {
         match self {
-            Self::NotFound { .. } => "NOT_FOUND",
-            Self::InvalidInput { .. } => "INVALID_INPUT",
-            Self::Unauthorized => "UNAUTHORIZED",
-            Self::Forbidden => "FORBIDDEN",
-            Self::Conflict => "CONFLICT",
-            Self::Canceled => "CANCELED",
-            Self::DeadlineExceeded => "DEADLINE_EXCEEDED",
-            Self::Internal { .. } => "INTERNAL",
+            Self::NotFound { .. } => errcodes::NOT_FOUND,
+            Self::InvalidInput { .. } => errcodes::INVALID_INPUT,
+            Self::Unauthorized => errcodes::UNAUTHORIZED,
+            Self::Forbidden => errcodes::FORBIDDEN,
+            Self::Conflict => errcodes::CONFLICT,
+            Self::Canceled => errcodes::CANCELED,
+            Self::DeadlineExceeded => errcodes::DEADLINE_EXCEEDED,
+            Self::Internal { .. } => errcodes::INTERNAL,
         }
     }
 

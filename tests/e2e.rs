@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use tokio::net::TcpListener;
 
-use zercle_rust_template::config::Config;
+use zercle_rust_template::platform::config::Config;
 
 /// Run the full application stack and assert that the documented HTTP probes
 /// all return the expected status codes.
