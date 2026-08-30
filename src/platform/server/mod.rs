@@ -1,7 +1,10 @@
 //! HTTP + gRPC server orchestration. Owns axum + tonic and the ordered shutdown.
 //!
-//! Mirrors `internal/shared/server/{shutdown,grpc}.go` (structure.md §14, canvas row 28).
-//! See [`run`] for the top-level entry point used by [`crate::app::run`].
+//! Mirrors Go `internal/platform/server`. The server shell is feature-agnostic:
+//! HTTP feature routers arrive pre-mounted (each feature nests itself under its
+//! versioned prefix) and gRPC services arrive pre-registered on the router built
+//! by [`grpc_server`]. [`run`] is the top-level entry point used by the
+//! composition root ([`crate::app`]).
 
 pub mod grpc_interceptor;
 pub mod http;
@@ -10,27 +13,66 @@ pub mod shutdown;
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
+use axum::Router;
 use tokio::task::JoinHandle;
 use tonic::transport::Server as TonicServer;
-use tower::ServiceBuilder;
 
-/// 4 MiB cap on incoming + outgoing gRPC message bodies. Matches Go's
-/// `grpc.MaxRecvMsgSize(4*1024*1024)` and `grpc.MaxSendMsgSize(4*1024*1024)`
-/// in `internal/shared/server/grpc.go` (Go defaults to 4 MiB anyway, but
-/// setting it explicitly makes the limit visible at the call site).
-const GRPC_MESSAGE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
-
-use crate::{
-    app::AppState,
-    features::example::{GrpcServer, grpc_server},
-    shared::telemetry::{Telemetry, shutdown as shutdown_telemetry},
+use crate::platform::{
+    config::Config,
+    health::Registry as HealthRegistry,
+    telemetry::{Telemetry, shutdown as shutdown_telemetry},
 };
 
+/// Layer stack applied by [`grpc_server`] on top of the plain tonic builder.
+///
+/// `tower::layer::util::Stack` and `Identity` are public types, so the concrete
+/// tonic `Router` type is nameable — no generics are needed anywhere in the
+/// wiring (`di::register` → `app::build` → `run`).
+pub type GrpcStack =
+    tower::layer::util::Stack<grpc_interceptor::GrpcLogRecoverLayer, tower::layer::util::Identity>;
+
+/// A tonic router carrying every registered feature gRPC service.
+pub type GrpcRouter = tonic::transport::server::Router<GrpcStack>;
+
+/// Process-wide server state assembled by the composition root. Cloned cheaply
+/// via [`Arc`] (the underlying pools and registries are already `Arc`-based).
+#[derive(Clone)]
+pub struct AppState {
+    pub cfg: Arc<Config>,
+    pub db: sqlx::PgPool,
+    pub valkey: redis::aio::ConnectionManager,
+    pub health: Arc<HealthRegistry>,
+}
+
+pub use http::build_router;
 pub use shutdown::shutdown_signal;
+
+/// Pre-configured tonic server builder: trace spans per call (OTel parity with
+/// the Go template's `otelgrpc` stats handler) plus the unary logging +
+/// panic-recovery interceptor. Features call `.add_service(…)` on the returned
+/// builder; keep all transport-level gRPC policy here so features stay
+/// transport-dumb.
+pub fn grpc_server() -> TonicServer<GrpcStack> {
+    TonicServer::builder()
+        .layer(grpc_interceptor::GrpcLogRecoverLayer)
+        .trace_fn(|req| {
+            let method = req.uri().path();
+            tracing::info_span!("grpc", method = %method, otel.kind = "server", otel.status_code = tracing::field::Empty)
+        })
+}
 
 /// Start the HTTP + gRPC servers, wait for a shutdown signal (or a server
 /// error), then run the ordered graceful shutdown.
-pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
+///
+/// `api` is the merged feature HTTP router (each feature nests itself under
+/// its versioned prefix); `grpc` is the tonic router built from
+/// [`grpc_server`] + feature services.
+pub async fn run(
+    state: AppState,
+    telemetry: Telemetry,
+    api: Router,
+    grpc: GrpcRouter,
+) -> Result<()> {
     // Install the Prometheus registry for the /metrics handler.
     http::install_metrics_registry(telemetry.prometheus_registry.clone());
 
@@ -65,7 +107,7 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
     });
 
     // --- HTTP server (axum) ----------------------------------------------
-    let router = http::build_router(state.clone());
+    let router = http::build_router(state.clone(), api);
     let http_state_for_shutdown = state.clone();
     let mut http_rx = shutdown_rx.clone();
     let http_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
@@ -80,38 +122,16 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
 
     // --- gRPC server (tonic) ---------------------------------------------
     //
-    // Observability parity with the Go template's
-    // `grpc.StatsHandler(otelgrpc.NewServerHandler())` is achieved via
-    // `trace_fn`, which attaches a `tracing::Span` to each call. The
-    // `tracing-opentelemetry` layer installed in `shared::telemetry` then
-    // exports those spans over OTLP, so OTel sees one span per gRPC call
-    // without pulling a new crate. The unary logging + panic-recovery
-    // interceptor (`grpc_interceptor::GrpcLogRecoverLayer`) is the
-    // functional equivalent of the Go unary interceptor. Stream RPCs
-    // receive the tracing span but no panic-recovery wrapper (tonic 0.12's
-    // `Interceptor` trait only covers unary; this is the documented
-    // acceptable gap).
-    let example_grpc = grpc_server(GrpcServer::new(state.example_service.clone()))
-        .max_decoding_message_size(GRPC_MESSAGE_SIZE_LIMIT)
-        .max_encoding_message_size(GRPC_MESSAGE_SIZE_LIMIT);
-    let grpc_log_layer = ServiceBuilder::new()
-        .layer(grpc_interceptor::GrpcLogRecoverLayer)
-        .into_inner();
+    // `grpc` already carries every feature service plus the platform layer
+    // stack (see [`grpc_server`]); here we only drive it to completion.
     let mut grpc_rx = shutdown_rx.clone();
     let grpc_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
-        TonicServer::builder()
-            .layer(grpc_log_layer)
-            .trace_fn(|req| {
-                let method = req.uri().path();
-                tracing::info_span!("grpc", method = %method, otel.kind = "server", otel.status_code = tracing::field::Empty)
-            })
-            .add_service(example_grpc)
-            .serve_with_shutdown(grpc_socket_addr, async move {
-                let _ = grpc_rx.changed().await;
-                tracing::info!("grpc graceful shutdown initiated");
-            })
-            .await
-            .context("tonic serve")
+        grpc.serve_with_shutdown(grpc_socket_addr, async move {
+            let _ = grpc_rx.changed().await;
+            tracing::info!("grpc graceful shutdown initiated");
+        })
+        .await
+        .context("tonic serve")
     });
 
     let shutdown_timeout = cfg.shutdown_timeout();
@@ -184,7 +204,7 @@ pub async fn run(state: AppState, telemetry: Telemetry) -> Result<()> {
 /// Ordered graceful shutdown: HTTP drain (already in-flight via
 /// `with_graceful_shutdown`), gRPC drain (bounded), DB close, Valkey drop,
 /// telemetry flush. Bounded by `shutdown_timeout`.
-pub async fn shutdown(state: &AppState, telemetry: Telemetry, shutdown_timeout: Duration) {
+async fn shutdown(state: &AppState, telemetry: Telemetry, shutdown_timeout: Duration) {
     tracing::info!(
         timeout_secs = shutdown_timeout.as_secs(),
         "shutdown initiated"

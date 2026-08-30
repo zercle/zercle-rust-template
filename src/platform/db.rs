@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use sqlx::postgres::PgPoolOptions;
 
-use crate::{config::Config, shared::health::Checker};
+use crate::{platform::config::Config, platform::health::Checker};
 
 /// Build a tuned [`sqlx::PgPool`] from `cfg` and ping it before returning.
 ///

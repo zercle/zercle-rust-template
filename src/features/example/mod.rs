@@ -1,29 +1,28 @@
 //! STUB FEATURE — delete src/features/example to start your project.
 //!
-//! Public re-exports + composition helpers for the example feature.
+//! Example feature sliced into clean-architecture layers (Go
+//! `internal/features/example` parity):
+//!
+//! ```text
+//! contract/    canonical inbound wire types (leaf; published via crate::api::v1)
+//! domain/      entities + domain errors (innermost)
+//! port/        outbound (driven) ports
+//! application/ inbound use-case port + implementation
+//! adapter/in/  driving adapters (axum HTTP, tonic gRPC)
+//! adapter/out/ driven adapters (postgres)
+//! di.rs        composition: wiring + sentinel → boundary error registration
+//! ```
+//!
+//! To start a real project: `rm -rf src/features/example`, remove `pub mod
+//! example;` from `src/features/mod.rs`, and drop the `example::di::register`
+//! call (plus the `example` config section) — the platform and app shell do
+//! not reference the feature from anywhere else.
 
-use std::sync::Arc;
-
-use axum::Router;
-
+pub mod adapter;
+pub mod application;
+pub mod contract;
+pub mod di;
 pub mod domain;
-pub mod dto;
-pub mod grpc;
-pub mod handler;
-pub mod repository;
-pub mod service;
+pub mod port;
 
-pub use domain::{Error, Item, Repository, Service, SharedService};
-pub use dto::{CreateItemRequest, ItemResponse, ListItemsRequest, ListItemsResponse};
-pub use grpc::{GrpcServer, server as grpc_server};
-pub use handler::{Handler, routes as handler_routes};
-pub use repository::PgRepository;
-pub use service::ServiceImpl;
-
-/// Build the axum router for the example feature.
-pub fn http_routes<S>(service: Arc<S>) -> Router
-where
-    S: domain::Service + ?Sized + Send + Sync + 'static,
-{
-    handler::routes(service)
-}
+pub use di::{Wired, register};

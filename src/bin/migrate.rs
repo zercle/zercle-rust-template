@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use sqlx::{Executor, PgPool, postgres::PgPoolOptions};
-use zercle_rust_template::config::Config;
+use zercle_rust_template::platform::config::Config;
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
