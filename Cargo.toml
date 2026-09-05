@@ -53,7 +53,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt",
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", features = ["trace", "metrics", "http-proto", "reqwest-client"] }
-opentelemetry-prometheus = "0.27"
+opentelemetry-prometheus = "0.32"
 prometheus = "0.13"
 tracing-opentelemetry = "0.28"
 
