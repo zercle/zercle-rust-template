@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package sales.v1;
+
+// sales feature RPC surface (Go handler parity, port-spec §5.3a). HTTP route
+// is POST /purchases.
+service SalesService {
+  rpc Purchase(PurchaseRequest) returns (PurchaseResponse);
+}
+
+message PurchaseRequest {
+  string machine_id = 1;
+  string product_id = 2;
+  repeated int32 coins = 3;
+}
+
+message PurchaseResponse {
+  string id = 1;
+  string machine_id = 2;
+  string product_id = 3;
+  int32 price_cents = 4;
+  int32 total_inserted_cents = 5;
+  int32 change_cents = 6;
+  repeated int32 change_coins = 7;
+  string purchased_at = 8;
+}

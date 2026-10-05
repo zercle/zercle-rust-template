@@ -20,7 +20,10 @@ use sqlx::{
     migrate::{Migration, Migrator},
 };
 
-use crate::features::example::di as example_di;
+use crate::features::{
+    catalog::di as catalog_di, machines::di as machines_di, reporting::di as reporting_di,
+    sales::di as sales_di,
+};
 use crate::platform::{
     config::Config,
     server::{GrpcRouter, Wired},
@@ -50,15 +53,32 @@ pub struct Feature {
 
 /// The registered features, in registration order (Go `features.List`).
 ///
-/// Registered order is the migration version order (Go §1). `example` is the
-/// stub that currently owns version 1; the later port wave replaces it with
-/// `catalog` (1), `machines` (2), `sales` (3), and `reporting` (no schema).
+/// Registered order is the migration version order (Go §1): catalog owns
+/// version 1, machines 2, sales 3; reporting owns no schema (it reads the
+/// other features' tables) so it contributes no migrations.
 pub fn list() -> Vec<Feature> {
-    vec![Feature {
-        name: "example",
-        register: example_di::register_with_grpc,
-        migrations: Some(example_di::migrations),
-    }]
+    vec![
+        Feature {
+            name: "catalog",
+            register: catalog_di::register_with_grpc,
+            migrations: Some(catalog_di::migrations),
+        },
+        Feature {
+            name: "machines",
+            register: machines_di::register_with_grpc,
+            migrations: Some(machines_di::migrations),
+        },
+        Feature {
+            name: "sales",
+            register: sales_di::register_with_grpc,
+            migrations: Some(sales_di::migrations),
+        },
+        Feature {
+            name: "reporting",
+            register: reporting_di::register_with_grpc,
+            migrations: None,
+        },
+    ]
 }
 
 /// Wire every registered feature into one [`Wired`], in list order (Go
@@ -116,17 +136,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_registers_example_first() {
+    fn list_registers_the_four_features_in_version_order() {
         let features = list();
-        assert_eq!(features[0].name, "example");
-        assert!(features[0].migrations.is_some(), "example owns schema");
+        let names: Vec<&str> = features.iter().map(|f| f.name).collect();
+        assert_eq!(names, vec!["catalog", "machines", "sales", "reporting"]);
+        assert!(features[0].migrations.is_some(), "catalog owns schema");
+        assert!(features[1].migrations.is_some(), "machines owns schema");
+        assert!(features[2].migrations.is_some(), "sales owns schema");
+        assert!(features[3].migrations.is_none(), "reporting owns no schema");
     }
 
     #[test]
     fn migrator_merges_and_keeps_sqlx_defaults() {
         let m = migrator().expect("registry builds");
-        // Version 1 is the example feature's `000001_create_items_table`.
+        // Versions 1/2/3 are catalog/machines/sales.
         assert!(m.version_exists(1));
+        assert!(m.version_exists(2));
+        assert!(m.version_exists(3));
         // Defaults preserved from `Migrator::DEFAULT`.
         assert!(m.locking);
         assert!(!m.ignore_missing);

@@ -79,21 +79,9 @@ async fn server_end_to_end() -> anyhow::Result<()> {
     let resp = client.get(format!("{url}/metrics")).send().await?;
     assert_eq!(resp.status(), reqwest::StatusCode::OK, "GET /metrics");
 
-    // --- POST /api/v1/items → 201 -----------------------------------
-    let resp = client
-        .post(format!("{url}/api/v1/items"))
-        .json(&serde_json::json!({"name": "stub"}))
-        .send()
-        .await?;
-    assert_eq!(
-        resp.status(),
-        reqwest::StatusCode::CREATED,
-        "POST /api/v1/items"
-    );
-
-    // --- GET /api/v1/items → 200 ------------------------------------
-    let resp = client.get(format!("{url}/api/v1/items")).send().await?;
-    assert_eq!(resp.status(), reqwest::StatusCode::OK, "GET /api/v1/items");
+    // Feature routes (`/api/v1/...`) are intentionally absent this wave: the
+    // catalog/machines/sales/reporting IO edge (adapters + di activation) lands
+    // in the next wave, which restores the per-feature end-to-end probes.
 
     handle.abort();
     let _ = handle.await;

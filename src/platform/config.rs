@@ -58,8 +58,6 @@ pub struct Config {
     pub otel: OtelConfig,
     #[validate(nested)]
     pub log: LogConfig,
-    #[validate(nested)]
-    pub example: ExampleConfig,
     #[serde(default)]
     #[validate(nested)]
     pub catalog: CatalogConfig,
@@ -185,23 +183,6 @@ pub struct LogConfig {
     pub level: String,
     #[validate(length(min = 1))]
     pub format: String,
-}
-
-/// Stub feature toggle + settings (kept while the `example` feature is wired
-/// through the registry; replaced by the four demo feature sections later).
-#[derive(Debug, Clone, Deserialize, Validate)]
-pub struct ExampleConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_page_size")]
-    #[validate(range(min = 1))]
-    pub default_page_size: u32,
-    #[serde(default = "default_max_page_size")]
-    #[validate(range(min = 1))]
-    pub max_page_size: u32,
-    #[serde(default = "default_max_name_length")]
-    #[validate(range(min = 1))]
-    pub max_name_length: u32,
 }
 
 /// catalog feature settings (Go `CatalogConfig`, port-spec §4). `enabled`
@@ -600,10 +581,6 @@ fn leaf_bindings() -> Vec<(&'static str, &'static str)> {
         ("otel.endpoint", "OTEL_EXPORTER_OTLP_ENDPOINT"),
         ("otel.service_name", "OTEL_SERVICE_NAME"),
         ("otel.sampling", "OTEL_TRACES_SAMPLER_ARG"),
-        ("example.enabled", "EXAMPLE_ENABLED"),
-        ("example.default_page_size", "EXAMPLE_DEFAULT_PAGE_SIZE"),
-        ("example.max_page_size", "EXAMPLE_MAX_PAGE_SIZE"),
-        ("example.max_name_length", "EXAMPLE_MAX_NAME_LENGTH"),
         ("catalog.enabled", "CATALOG_ENABLED"),
         ("catalog.default_page_size", "CATALOG_DEFAULT_PAGE_SIZE"),
         ("catalog.max_page_size", "CATALOG_MAX_PAGE_SIZE"),
@@ -671,11 +648,6 @@ otel:
 log:
   level: info
   format: json
-example:
-  enabled: true
-  default_page_size: 20
-  max_page_size: 100
-  max_name_length: 255
 "#
     }
 
@@ -694,7 +666,6 @@ example:
         assert_eq!(cfg.app.name, "test-svc");
         assert_eq!(cfg.http.port, 8080);
         assert_eq!(cfg.db.max_conns, 10);
-        assert!(cfg.example.enabled);
     }
 
     #[test]
