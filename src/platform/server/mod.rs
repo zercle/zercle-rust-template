@@ -34,6 +34,27 @@ pub type GrpcStack =
 /// A tonic router carrying every registered feature gRPC service.
 pub type GrpcRouter = tonic::transport::server::Router<GrpcStack>;
 
+/// Everything a feature contributes to the running application: its axum HTTP
+/// routes (already nested under `/api/v1`) and its tonic gRPC services.
+///
+/// Shared by every feature's `di` and merged by the feature registry
+/// ([`crate::features::registry`]).
+pub struct Wired {
+    /// axum routes for this feature, pre-nested under `/api/v1`.
+    pub http: Router,
+    /// tonic router for this feature. tonic has no `Router::merge`, so the
+    /// registry threads one accumulating router through every feature (each
+    /// chains `add_service`), starting from [`empty_grpc_router`].
+    pub grpc: GrpcRouter,
+}
+
+/// Seed for the registry's gRPC fold: the platform tonic builder carrying the
+/// shared layer stack, with no services registered yet.
+pub fn empty_grpc_router() -> GrpcRouter {
+    let mut builder = grpc_server();
+    builder.add_routes(tonic::service::Routes::default())
+}
+
 /// Process-wide server state assembled by the composition root. Cloned cheaply
 /// via [`Arc`] (the underlying pools and registries are already `Arc`-based).
 #[derive(Clone)]

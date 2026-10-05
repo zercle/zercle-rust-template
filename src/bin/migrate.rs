@@ -7,15 +7,21 @@
 //! * `force VERSION` — mark the migration table at `VERSION` dirty=false.
 //! * `version`       — print the current applied version.
 //!
-//! Migrations are embedded at compile time via `sqlx::migrate!`.
+//! Migrations are contributed by the feature registry
+//! ([`zercle_rust_template::features::registry::migrator`]) and merged into one
+//! version-sorted set (Go `cmd/migrate` + `fsmerge`, port-spec §1) instead of
+//! embedding the top-level `./migrations` directory directly.
 
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use sqlx::{Executor, PgPool, postgres::PgPoolOptions};
+use zercle_rust_template::features::registry;
 use zercle_rust_template::platform::config::Config;
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+fn migrator() -> Result<sqlx::migrate::Migrator> {
+    registry::migrator().context("build migration registry")
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -48,6 +54,8 @@ async fn run(args: Vec<String>) -> Result<()> {
 
     let cmd = parse_command(&args)?;
 
+    let migrator = migrator()?;
+
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .min_connections(0)
@@ -57,8 +65,8 @@ async fn run(args: Vec<String>) -> Result<()> {
         .context("connect postgres for migration")?;
 
     let result = match cmd {
-        Command::Up => run_up(&pool).await,
-        Command::Down { count } => run_down(&pool, count).await,
+        Command::Up => run_up(&migrator, &pool).await,
+        Command::Down { count } => run_down(&migrator, &pool, count).await,
         Command::Force { version } => run_force(&pool, version).await,
         Command::Version => run_version(&pool).await,
     };
@@ -110,15 +118,15 @@ fn parse_command(args: &[String]) -> Result<Command> {
 
 const USAGE: &str = "usage: migrate [up | down [N] | force VERSION | version]";
 
-async fn run_up(pool: &PgPool) -> Result<()> {
+async fn run_up(migrator: &sqlx::migrate::Migrator, pool: &PgPool) -> Result<()> {
     // sqlx's Migrator::run returns Ok even if every migration is already
     // applied, so a no-op "up" prints "migration complete" with the current
     // version — matching Go's `migrate.ErrNoChange` behaviour.
-    MIGRATOR.run(pool).await.context("apply migrations")?;
+    migrator.run(pool).await.context("apply migrations")?;
     print_version(pool).await
 }
 
-async fn run_down(pool: &PgPool, count: i64) -> Result<()> {
+async fn run_down(migrator: &sqlx::migrate::Migrator, pool: &PgPool, count: i64) -> Result<()> {
     // Resolve the target version from the known migration set, then issue a
     // single `undo` call. sqlx's `Migrator::undo(pool, target)` reverts every
     // applied migration with `version > target`, so computing the version
@@ -130,8 +138,11 @@ async fn run_down(pool: &PgPool, count: i64) -> Result<()> {
         return Ok(());
     };
 
-    let mut known_versions: Vec<i64> = MIGRATOR.iter().map(|m| m.version).collect();
+    // Reversible pairs share a version (`ReversibleUp` + `ReversibleDown`),
+    // so dedupe: the step math below must count versions, not entries.
+    let mut known_versions: Vec<i64> = migrator.iter().map(|m| m.version).collect();
     known_versions.sort_unstable();
+    known_versions.dedup();
 
     let target = if let Some(idx) = known_versions.iter().position(|&v| v == current_v) {
         if (idx as i64) < count {
@@ -145,7 +156,7 @@ async fn run_down(pool: &PgPool, count: i64) -> Result<()> {
         current_v.saturating_sub(count)
     };
 
-    MIGRATOR
+    migrator
         .undo(pool, target)
         .await
         .with_context(|| format!("undo migration to version {target}"))?;

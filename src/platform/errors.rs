@@ -4,9 +4,10 @@
 //! - `AppError::grpc_code()` → `tonic::Code`
 //! - `impl IntoResponse for AppError` → JSON `{"error": CODE, "message": MSG}` with the status.
 //!
-//! The machine-readable codes are exposed as [`errcodes`] constants and
-//! published outward via `crate::api::v1::errcodes` so other services can
-//! interpret error envelopes without importing server internals.
+//! The machine-readable codes are defined in [`crate::platform::errcodes`]
+//! and re-exported here as [`errcodes`]; they are published outward via
+//! `crate::api::errcodes` so other services can interpret error envelopes
+//! without importing server internals.
 
 use axum::{
     Json,
@@ -16,20 +17,8 @@ use axum::{
 use serde::Serialize;
 use tonic::Code as GrpcCode;
 
-/// Stable machine-readable error codes carried on the wire (the HTTP JSON
-/// `error` field). Published outward via `crate::api::v1::errcodes`; feature
-/// domains map their sentinels onto these at the composition edge (each
-/// feature's `di`).
-pub mod errcodes {
-    pub const NOT_FOUND: &str = "NOT_FOUND";
-    pub const INVALID_INPUT: &str = "INVALID_INPUT";
-    pub const UNAUTHORIZED: &str = "UNAUTHORIZED";
-    pub const FORBIDDEN: &str = "FORBIDDEN";
-    pub const CONFLICT: &str = "CONFLICT";
-    pub const CANCELED: &str = "CANCELED";
-    pub const DEADLINE_EXCEEDED: &str = "DEADLINE_EXCEEDED";
-    pub const INTERNAL: &str = "INTERNAL";
-}
+/// Re-export of the canonical code constants ([`crate::platform::errcodes`]).
+pub use crate::platform::errcodes;
 
 /// Shared, transport-agnostic error used at the HTTP / gRPC boundary.
 #[derive(Debug, thiserror::Error)]
@@ -50,6 +39,10 @@ pub enum AppError {
     DeadlineExceeded,
     #[error("internal error")]
     Internal { cause: Option<anyhow::Error> },
+    #[error("method not allowed")]
+    MethodNotAllowed,
+    #[error("payload too large")]
+    PayloadTooLarge,
 }
 
 impl AppError {
@@ -63,6 +56,8 @@ impl AppError {
             Self::Canceled => errcodes::CANCELED,
             Self::DeadlineExceeded => errcodes::DEADLINE_EXCEEDED,
             Self::Internal { .. } => errcodes::INTERNAL,
+            Self::MethodNotAllowed => errcodes::METHOD_NOT_ALLOWED,
+            Self::PayloadTooLarge => errcodes::PAYLOAD_TOO_LARGE,
         }
     }
 
@@ -76,6 +71,8 @@ impl AppError {
             Self::Canceled => "request canceled",
             Self::DeadlineExceeded => "deadline exceeded",
             Self::Internal { .. } => "internal error",
+            Self::MethodNotAllowed => "method not allowed",
+            Self::PayloadTooLarge => "payload too large",
         }
     }
 
@@ -91,6 +88,8 @@ impl AppError {
             }
             Self::DeadlineExceeded => StatusCode::GATEWAY_TIMEOUT,
             Self::Internal { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+            Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
         }
     }
 
@@ -104,6 +103,8 @@ impl AppError {
             Self::Canceled => GrpcCode::Cancelled,
             Self::DeadlineExceeded => GrpcCode::DeadlineExceeded,
             Self::Internal { .. } => GrpcCode::Internal,
+            Self::MethodNotAllowed => GrpcCode::Unimplemented,
+            Self::PayloadTooLarge => GrpcCode::ResourceExhausted,
         }
     }
 
@@ -222,6 +223,20 @@ mod tests {
         assert_eq!(
             AppError::Internal { cause: None }.message(),
             "internal error"
+        );
+    }
+
+    #[test]
+    fn framework_error_variants_map_codes_and_statuses() {
+        assert_eq!(AppError::MethodNotAllowed.code(), "METHOD_NOT_ALLOWED");
+        assert_eq!(
+            AppError::MethodNotAllowed.http_status(),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(AppError::PayloadTooLarge.code(), "PAYLOAD_TOO_LARGE");
+        assert_eq!(
+            AppError::PayloadTooLarge.http_status(),
+            StatusCode::PAYLOAD_TOO_LARGE
         );
     }
 

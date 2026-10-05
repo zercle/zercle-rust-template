@@ -1,7 +1,7 @@
 //! Server binary entry point.
 //!
 //! Loads and validates config, then delegates to [`zercle_rust_template::run`]
-//! which builds [`AppState`](crate::app::AppState), starts the HTTP and gRPC
+//! which builds [`AppState`](zercle_rust_template::platform::server::AppState), starts the HTTP and gRPC
 //! servers, and orchestrates the ordered graceful shutdown.
 
 use std::process::ExitCode;

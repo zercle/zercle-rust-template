@@ -2,7 +2,7 @@
 //!
 //! Mirrors `internal/shared/middleware/recover.go` (structure.md §9). Catches panics in downstream
 //! handlers, logs them with the request id (when present), and returns the shared
-//! [`AppError::Internal`](crate::shared::errors::AppError::Internal) JSON body
+//! [`AppError::Internal`] JSON body
 //! `{"error":"INTERNAL","message":"internal error"}` with status 500.
 //!
 //! Implemented via [`tower_http::catch_panic::CatchPanicLayer`] with a custom response generator

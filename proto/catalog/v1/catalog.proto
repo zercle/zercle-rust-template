@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package catalog.v1;
+
+// catalog feature RPC surface (Go handler parity, port-spec §5.1a). HTTP
+// routes are POST /products, GET /products, GET /products/{id}; the RPCs carry
+// the same contract shapes in example.proto's style.
+service CatalogService {
+  rpc CreateProduct(CreateProductRequest) returns (Product);
+  rpc GetProduct(GetProductRequest) returns (Product);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  int32 price_cents = 3;
+  int32 stock = 4;
+  string created_at = 5;
+  string updated_at = 6;
+}
+
+message CreateProductRequest {
+  string name = 1;
+  int32 price_cents = 2;
+  int32 stock = 3;
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message ListProductsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+}

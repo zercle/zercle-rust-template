@@ -8,6 +8,7 @@
 
 pub mod config;
 pub mod db;
+pub mod errcodes;
 pub mod errors;
 pub mod health;
 pub mod middleware;

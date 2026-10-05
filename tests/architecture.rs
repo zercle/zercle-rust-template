@@ -126,6 +126,28 @@ fn rules() -> Vec<Rule> {
             },
         },
         Rule {
+            name: "features-registry-imports-only-own-features",
+            why: "the feature registry enumerates features; it may reach only a feature's module root or its `di` composition entry point (plus platform support), never a feature's domain/contract/port/application/adapter internals",
+            denied: |module, import| {
+                // Applies to `src/features/mod.rs` and `src/features/registry.rs`.
+                if !(module == "features" || module == "features/registry") {
+                    return false;
+                }
+                // Non-feature imports (platform, stdlib-adjacent crates) are not
+                // this rule's concern.
+                if !is_under(import, "features") {
+                    return false;
+                }
+                let segs: Vec<&str> = import.split('/').collect();
+                // `features/<f>` (module root) is allowed.
+                if segs.len() == 2 {
+                    return false;
+                }
+                // `features/<f>/di` (and below) is the composition entry point.
+                !(segs.len() >= 3 && segs[2] == "di")
+            },
+        },
+        Rule {
             name: "platform-ignores-features",
             why: "cross-cutting platform code must stay feature-agnostic; features depend on platform, never the reverse",
             denied: |module, import| is_under(module, "platform") && is_under(import, "features"),
@@ -344,6 +366,37 @@ mod scanner_tests {
     fn ignores_comments_and_relative_imports() {
         let got = crate_imports("// use crate::platform::db;\nuse super::http;\nuse sqlx::PgPool;");
         assert!(got.is_empty(), "got {got:?}");
+    }
+
+    #[test]
+    fn exactly_nine_rules_are_enforced() {
+        assert_eq!(rules().len(), 9, "expected the 9 documented rules");
+    }
+
+    #[test]
+    fn registry_rule_allows_roots_and_di_only() {
+        let table = rules();
+        let rule = table
+            .iter()
+            .find(|r| r.name == "features-registry-imports-only-own-features")
+            .expect("9th rule present");
+        // Allowed: a feature module root, its `di` entry point, platform support.
+        assert!(!(rule.denied)("features", "features/catalog/di"));
+        assert!(!(rule.denied)("features/registry", "features/sales"));
+        assert!(!(rule.denied)("features", "features/catalog"));
+        assert!(!(rule.denied)("features", "platform/config"));
+        // Denied: a feature's domain/contract/port/application/adapter internals.
+        assert!((rule.denied)("features", "features/catalog/domain"));
+        assert!((rule.denied)(
+            "features/registry",
+            "features/sales/adapter/driven/postgres"
+        ));
+        assert!((rule.denied)("features", "features/sales/application"));
+        // Other modules are out of scope for this rule.
+        assert!(!(rule.denied)(
+            "features/catalog/di",
+            "features/sales/domain"
+        ));
     }
 
     #[test]

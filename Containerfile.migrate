@@ -49,7 +49,9 @@ ENV CC_${MUSL_TARGET_UNDERSCORE}=${MUSL_GCC} \
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
 COPY proto ./proto
-COPY migrations ./migrations
+# Config skeleton: Config::load() requires the yaml structure — env leaves
+# (DB_* in compose) override values on top of it.
+COPY config.yaml ./config.yaml
 
 RUN cargo build --release \
     --target ${MUSL_TARGET} \
@@ -64,6 +66,8 @@ ARG MUSL_TARGET
 
 COPY --from=builder --chown=nonroot:nonroot \
     /build/target/${MUSL_TARGET}/release/migrate /migrate
+# Same exe-dir config.yaml fallback the server image ships.
+COPY --from=builder --chown=nonroot:nonroot /build/config.yaml /config.yaml
 
 USER nonroot:nonroot
 
