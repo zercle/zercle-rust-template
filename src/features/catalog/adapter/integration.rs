@@ -110,6 +110,11 @@ async fn migrate_and_truncate(pool: &PgPool) {
 }
 
 fn product(name: &str, price_cents: i32, created_at: OffsetDateTime) -> Product {
+    // Postgres timestamps carry microsecond precision; the wall clock may carry
+    // nanoseconds (Linux CI). Truncate so DB round-trips compare equal.
+    let created_at = created_at
+        .replace_nanosecond(created_at.nanosecond() / 1000 * 1000)
+        .expect("nanosecond component is always in range");
     Product {
         id: Uuid::now_v7(),
         name: name.to_string(),
