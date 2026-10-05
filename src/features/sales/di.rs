@@ -153,7 +153,8 @@ sales: {{ enabled: {enabled} }}
     // --- Live-DB end-to-end integration tests ----------------------------
     //
     // Gated `#[ignore]` so `cargo test` is green without infra. Run with:
-    //   DATABASE_URL=postgres://…it_sales… cargo test --lib sales -- --include-ignored
+    //   cargo test --lib sales -- --include-ignored
+    // The DSN is `DATABASE_URL` when set, else the `DB_*` config leaves.
 
     use axum::body::Body;
     use axum::http::{Request, StatusCode as SC};
@@ -167,8 +168,7 @@ sales: {{ enabled: {enabled} }}
     const TEST_LOCK_KEY: i64 = 0x5a1e_55a1e5;
 
     async fn test_pool() -> (PgPool, PgConnection) {
-        let url = std::env::var("DATABASE_URL")
-            .expect("DATABASE_URL required for sales integration tests");
+        let url = crate::platform::db::integration_db_url();
         if std::env::var("APP_ENVIRONMENT").as_deref() == Ok("production") || url.contains("/prod")
         {
             panic!("integration tests must not run against production");

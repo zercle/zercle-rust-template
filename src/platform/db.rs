@@ -63,6 +63,51 @@ impl Checker for PgChecker {
     }
 }
 
+/// Local hostnames a live-infra suite may target. Shared by the guard below.
+#[cfg(test)]
+const INTEGRATION_LOCAL_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
+
+/// Resolve the Postgres DSN for an in-crate live-infra integration suite.
+///
+/// Mirrors the Go template's integration harnesses, which call `config.Load()`
+/// rather than reading `DATABASE_URL`: an explicit `DATABASE_URL` (a local
+/// throwaway database) wins; otherwise the DSN is derived from the same
+/// `Config::load()` DB leaves the `server`/`migrate` binaries use
+/// ([`Config::db_conn_string`]). That makes `cp .env.example .env && task
+/// test-integration` work with no hand-exported environment (Go Taskfile parity).
+///
+/// Test-only. Hard-fails (never skips) on `APP_ENVIRONMENT=production` or a
+/// non-local database host, so the production/locality guard is enforced for
+/// every suite that resolves a DSN through here.
+#[cfg(test)]
+pub fn integration_db_url() -> String {
+    let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        Config::load()
+            .expect("hard-fail: load config to derive the integration database DSN")
+            .db_conn_string()
+    });
+    assert_local_integration_db(&url);
+    url
+}
+
+/// Production / remote guard for integration DSNs.
+#[cfg(test)]
+fn assert_local_integration_db(url: &str) {
+    if std::env::var("APP_ENVIRONMENT").as_deref() == Ok("production") {
+        panic!("integration tests must not run against production (APP_ENVIRONMENT=production)");
+    }
+    let host = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string));
+    match host.as_deref() {
+        Some(h) if INTEGRATION_LOCAL_HOSTS.contains(&h) => {}
+        other => panic!(
+            "refusing non-local integration database host {other:?}; integration tests must \
+             target a local throwaway database"
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

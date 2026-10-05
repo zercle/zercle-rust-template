@@ -183,9 +183,7 @@ mod integration {
     /// migrations (catalog + machines + sales; reporting owns none) and
     /// truncates every source table before each case.
     async fn setup() -> PgPool {
-        let url = std::env::var("DATABASE_URL").expect(
-            "DATABASE_URL must be set to run reporting integration tests (hard fail: no skip)",
-        );
+        let url = crate::platform::db::integration_db_url();
         assert_ne!(
             std::env::var("APP_ENVIRONMENT").as_deref(),
             Ok("production"),
@@ -259,7 +257,7 @@ mod integration {
         .expect("insert sales purchase");
     }
 
-    #[ignore = "requires DATABASE_URL (live postgres)"]
+    #[ignore = "requires live postgres (DB_* / DATABASE_URL)"]
     #[tokio::test]
     async fn overview_and_top_are_empty_on_empty_database() {
         let _guard = DB_LOCK.lock().await;
@@ -273,7 +271,7 @@ mod integration {
         assert!(repo.get_top_machines(5).await.expect("top").is_empty());
     }
 
-    #[ignore = "requires DATABASE_URL (live postgres)"]
+    #[ignore = "requires live postgres (DB_* / DATABASE_URL)"]
     #[tokio::test]
     async fn repository_aggregates_totals_and_excludes_salesless_machines() {
         let _guard = DB_LOCK.lock().await;
@@ -318,7 +316,7 @@ mod integration {
         assert_eq!(top[1].revenue_cents, 50);
     }
 
-    #[ignore = "requires DATABASE_URL (live postgres)"]
+    #[ignore = "requires live postgres (DB_* / DATABASE_URL)"]
     #[tokio::test]
     async fn top_machines_tie_break_by_machine_id_ascending() {
         let _guard = DB_LOCK.lock().await;
@@ -343,7 +341,7 @@ mod integration {
         assert_eq!(top[1].machine_id, m_high);
     }
 
-    #[ignore = "requires DATABASE_URL (live postgres)"]
+    #[ignore = "requires live postgres (DB_* / DATABASE_URL)"]
     #[tokio::test]
     async fn usecase_clamps_default_and_zero_but_rejects_over_max() {
         let _guard = DB_LOCK.lock().await;

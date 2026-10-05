@@ -201,9 +201,9 @@ mod tests {
 /// * Creates the database via an admin connection, applies the **registry**
 ///   migrator in-suite, truncates between cases, and drops the database after.
 ///
-/// Run with:
-/// `DATABASE_URL=postgres://postgres:postgres@localhost:5432/it_machines \
-///  cargo test --lib machines -- --include-ignored`
+/// Run with `cargo test --lib machines -- --include-ignored`; the DSN comes
+/// from `DATABASE_URL` when set, else from the `DB_*` config leaves
+/// (`cp .env.example .env` + `task test-integration` needs no exports).
 #[cfg(test)]
 mod integration {
     use std::sync::Arc;
@@ -218,10 +218,15 @@ mod integration {
     use crate::platform::errors::errcodes;
 
     const DB_NAME: &str = "it_machines";
-    const DEFAULT_URL: &str = "postgres://postgres:postgres@localhost:5432/it_machines";
 
+    /// Shared DSN resolution (`DATABASE_URL` else the `DB_*` config leaves),
+    /// then pin the isolated test database name so the suite never touches the
+    /// developer's `app` database.
     fn target_url() -> String {
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
+        let mut url = url::Url::parse(&crate::platform::db::integration_db_url())
+            .expect("integration DSN must be a valid URL");
+        url.set_path(DB_NAME);
+        url.to_string()
     }
 
     /// Maintenance connection to the `postgres` database, same host/credentials.

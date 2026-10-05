@@ -305,11 +305,12 @@ impl Config {
         );
 
         // Apply the explicit Go-template leaf bindings (D5) on top of the auto env source so that
-        // SCREAMING_SNAKE names win when set.
+        // SCREAMING_SNAKE names win when set. List leaves are comma-split because the Rust `config`
+        // crate does not weak-type a scalar into a `Vec<String>` the way Go's viper does.
         for (key, env_name) in leaf_bindings() {
             if let Ok(val) = std::env::var(env_name) {
                 builder = builder
-                    .set_override(key, val)
+                    .set_override(key, env_override_value(key, &val))
                     .with_context(|| format!("set {key} from {env_name}"))?;
             }
         }
@@ -557,13 +558,38 @@ fn config_file_override() -> Option<String> {
 /// where this fallback matters.
 fn exe_dir_config_candidates() -> Vec<String> {
     let mut out = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("config.yaml");
-            out.push(p.to_string_lossy().into_owned());
-        }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        out.push(dir.join("config.yaml").to_string_lossy().into_owned());
     }
     out
+}
+
+/// CORS leaves backed by `Vec<String>` in [`HttpConfig`]; env values comma-split into
+/// a sequence to match Go's viper weak-typing. Exactly these three keys are list-valued.
+const LIST_LEAVES: [&str; 3] = [
+    "http.cors_allow_origins",
+    "http.cors_allow_methods",
+    "http.cors_allow_headers",
+];
+
+/// Convert a scalar env override to the type its config leaf expects. The CORS list
+/// leaves (see [`LIST_LEAVES`]) comma-split; every other leaf stays a scalar string.
+/// Splitting trims each item and drops empties, so `""` -> `[]` and `"*"` -> `["*"]`.
+fn env_override_value(key: &str, raw: &str) -> ::config::Value {
+    if LIST_LEAVES.contains(&key) {
+        let items: Vec<String> = raw
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        items.into()
+    } else {
+        raw.into()
+    }
 }
 
 /// Mirror of Go `leafBindings()`. `(config_key, ENV_NAME)`. See decision D5.
@@ -684,6 +710,89 @@ log:
             .add_source(::config::File::from_str(yaml, ::config::FileFormat::Yaml))
             .build()
             .expect("yaml builds")
+    }
+
+    /// Deserialize `sample_yaml()` with env-style scalar overrides applied through the
+    /// same `env_override_value` conversion `Config::load` uses, without touching the
+    /// process environment (so cases stay deterministic and parallel-safe).
+    fn from_yaml_with_env(overrides: &[(&str, &str)]) -> Config {
+        let mut builder = ::config::Config::builder().add_source(::config::File::from_str(
+            sample_yaml(),
+            ::config::FileFormat::Yaml,
+        ));
+        for (key, raw) in overrides {
+            builder = builder
+                .set_override(*key, env_override_value(key, raw))
+                .expect("valid config key");
+        }
+        builder
+            .build()
+            .expect("config builds")
+            .try_deserialize()
+            .expect("deserialize")
+    }
+
+    #[test]
+    fn cors_lists_load_from_yaml_only() {
+        let yaml = sample_yaml().replace(
+            "  health_probe_timeout: 5s\n",
+            "  health_probe_timeout: 5s\n  cors_allow_origins:\n    - https://a.example\n    - https://b.example\n  cors_allow_methods:\n    - GET\n    - POST\n  cors_allow_headers:\n    - Authorization\n",
+        );
+        let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
+        assert_eq!(
+            cfg.http.cors_allow_origins,
+            vec!["https://a.example", "https://b.example"]
+        );
+        assert_eq!(cfg.http.cors_allow_methods, vec!["GET", "POST"]);
+        assert_eq!(cfg.http.cors_allow_headers, vec!["Authorization"]);
+    }
+
+    #[test]
+    fn cors_lists_split_comma_env_values_and_trim_items() {
+        let cfg = from_yaml_with_env(&[
+            (
+                "http.cors_allow_methods",
+                "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+            ),
+            (
+                "http.cors_allow_headers",
+                "Authorization,Content-Type,X-Request-ID",
+            ),
+            (
+                "http.cors_allow_origins",
+                " https://a.example , https://b.example ",
+            ),
+        ]);
+        assert_eq!(
+            cfg.http.cors_allow_methods,
+            vec!["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+        );
+        assert_eq!(
+            cfg.http.cors_allow_headers,
+            vec!["Authorization", "Content-Type", "X-Request-ID"]
+        );
+        assert_eq!(
+            cfg.http.cors_allow_origins,
+            vec!["https://a.example", "https://b.example"]
+        );
+    }
+
+    #[test]
+    fn cors_single_star_env_value_becomes_one_element() {
+        let cfg = from_yaml_with_env(&[("http.cors_allow_origins", "*")]);
+        assert_eq!(cfg.http.cors_allow_origins, vec!["*"]);
+    }
+
+    #[test]
+    fn cors_empty_env_value_becomes_empty_list() {
+        let cfg = from_yaml_with_env(&[("http.cors_allow_origins", "")]);
+        assert!(cfg.http.cors_allow_origins.is_empty());
+    }
+
+    #[test]
+    fn non_list_leaf_env_override_stays_scalar() {
+        let cfg = from_yaml_with_env(&[("http.body_limit", "2M")]);
+        assert_eq!(cfg.http.body_limit, "2M");
     }
 
     #[test]

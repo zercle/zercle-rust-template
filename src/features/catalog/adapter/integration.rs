@@ -7,9 +7,11 @@
 //! Ignored by default so `cargo test` stays green without infra. Run with:
 //!
 //! ```text
-//! DATABASE_URL=postgres://postgres:postgres@localhost:5432/it_catalog \
-//!   cargo test --lib catalog --include-ignored
+//! cargo test --lib catalog --include-ignored
 //! ```
+//!
+//! The DSN comes from `DATABASE_URL` when set, else from the `DB_*` config
+//! leaves (`cp .env.example .env` + `task test-integration` needs no exports).
 //!
 //! The suite uses Valkey DB `15` (FLUSHDB on that db only) so a developer's
 //! default DB `0` cache is untouched. Tests serialize on [`INFRA_LOCK`] because
@@ -45,21 +47,9 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
-/// Production / remote guard: refuse to run against a non-local database.
-fn assert_local_environment(db_url: &str, valkey_host: &str) {
-    if std::env::var("APP_ENVIRONMENT").as_deref() == Ok("production") {
-        panic!("integration tests must not run against production (APP_ENVIRONMENT=production)");
-    }
-    let db_host = url::Url::parse(db_url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string));
-    match db_host.as_deref() {
-        Some(h) if LOCAL_HOSTS.contains(&h) => {}
-        other => panic!(
-            "refusing non-local DATABASE_URL host {other:?}; integration tests must target a \
-             local throwaway database"
-        ),
-    }
+/// Valkey production / remote guard: refuse a non-local cache host. The
+/// database half of the guard lives in [`crate::platform::db::integration_db_url`].
+fn assert_local_valkey(valkey_host: &str) {
     if !LOCAL_HOSTS.contains(&valkey_host) {
         panic!(
             "refusing non-local VALKEY_HOST {valkey_host:?}; integration tests must target local \
@@ -69,9 +59,7 @@ fn assert_local_environment(db_url: &str, valkey_host: &str) {
 }
 
 fn database_url() -> String {
-    std::env::var("DATABASE_URL").expect(
-        "hard-fail: DATABASE_URL must point at a local throwaway database (e.g. it_catalog)",
-    )
+    crate::platform::db::integration_db_url()
 }
 
 fn valkey_url() -> String {
@@ -89,7 +77,7 @@ fn valkey_url() -> String {
 async fn connect_pool() -> PgPool {
     let url = database_url();
     let valkey_host = env_or("VALKEY_HOST", "localhost");
-    assert_local_environment(&url, &valkey_host);
+    assert_local_valkey(&valkey_host);
     PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(5))
@@ -133,7 +121,7 @@ fn product(name: &str, price_cents: i32, created_at: OffsetDateTime) -> Product 
 }
 
 #[tokio::test]
-#[ignore = "requires live Postgres; set DATABASE_URL to a local throwaway database"]
+#[ignore = "requires live Postgres (DB_* / DATABASE_URL)"]
 async fn postgres_repository_create_get_list_pagination() {
     let _guard = INFRA_LOCK.lock().await;
     let pool = connect_pool().await;
@@ -170,7 +158,7 @@ async fn postgres_repository_create_get_list_pagination() {
 }
 
 #[tokio::test]
-#[ignore = "requires live Postgres + Valkey; set DATABASE_URL to a local throwaway database"]
+#[ignore = "requires live Postgres + Valkey (DB_* / DATABASE_URL)"]
 async fn cache_aside_miss_then_hit_and_not_found_is_not_cached() {
     let _guard = INFRA_LOCK.lock().await;
     let pool = connect_pool().await;
@@ -221,7 +209,7 @@ async fn cache_aside_miss_then_hit_and_not_found_is_not_cached() {
 }
 
 #[tokio::test]
-#[ignore = "requires live Postgres; set DATABASE_URL to a local throwaway database"]
+#[ignore = "requires live Postgres (DB_* / DATABASE_URL)"]
 async fn http_get_unknown_id_returns_not_found_envelope() {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};

@@ -217,12 +217,13 @@ mod tests {
     // --- Live-DB integration tests ---------------------------------------
     //
     // Gated `#[ignore]` so `cargo test` is green without infra. Run with:
-    //   DATABASE_URL=postgres://…it_sales… cargo test --lib sales -- --include-ignored
+    //   cargo test --lib sales -- --include-ignored
     //
-    // Setup hard-fails when DATABASE_URL is missing, refuses production, applies
-    // the merged registry migrations in-suite, and TRUNCATEs the three tables
-    // sales touches. A session-scoped advisory lock serializes the suites that
-    // share this one database (Go port-spec §6 runs `-p 1` for the same reason).
+    // Setup hard-fails when the database is unreachable and refuses production,
+    // applies the merged registry migrations in-suite, and TRUNCATEs the three
+    // tables sales touches. A session-scoped advisory lock serializes the suites
+    // that share this one database (Go port-spec §6 runs `-p 1` for the same
+    // reason). The DSN is `DATABASE_URL` when set, else the `DB_*` config leaves.
 
     use sqlx::Connection;
     use sqlx::postgres::{PgConnection, PgPoolOptions};
@@ -235,8 +236,7 @@ mod tests {
     }
 
     async fn test_db() -> TestDb {
-        let url = std::env::var("DATABASE_URL")
-            .expect("DATABASE_URL required for sales integration tests");
+        let url = crate::platform::db::integration_db_url();
         if std::env::var("APP_ENVIRONMENT").as_deref() == Ok("production") || url.contains("/prod")
         {
             panic!("integration tests must not run against production");

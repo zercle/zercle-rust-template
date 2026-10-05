@@ -138,8 +138,11 @@ async fn run_down(migrator: &sqlx::migrate::Migrator, pool: &PgPool, count: i64)
         return Ok(());
     };
 
+    // Reversible pairs share a version (`ReversibleUp` + `ReversibleDown`),
+    // so dedupe: the step math below must count versions, not entries.
     let mut known_versions: Vec<i64> = migrator.iter().map(|m| m.version).collect();
     known_versions.sort_unstable();
+    known_versions.dedup();
 
     let target = if let Some(idx) = known_versions.iter().position(|&v| v == current_v) {
         if (idx as i64) < count {
