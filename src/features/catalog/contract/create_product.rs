@@ -21,7 +21,7 @@ pub struct CreateProductRequest {
 
 /// JSON representation of a catalog product (Go `ProductResponse`, verbatim
 /// fields). Timestamps are RFC 3339 strings; domain → contract mapping lives
-/// in `application::usecase`.
+/// in `usecase::usecase`.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ProductResponse {
     pub id: String,

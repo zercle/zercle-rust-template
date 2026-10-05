@@ -26,7 +26,7 @@ Clean (DDD) architecture **per feature**, all dependencies pointing inward. This
 
 ```
 consumer services ──> api::v1 ──> features/*/contract    (published contract, outward-only)
-adapter/driving ──> application::Service ──> port::Repository <── adapter/driven/postgres
+handler ──> usecase::Service ──> repository::Repository <── repository/postgres
 all layers ──> domain (entities + sentinel errors; innermost)
 platform/* ── feature-agnostic, never imports features/**
 ```
@@ -35,28 +35,29 @@ A request flows: `src/main.rs` loads config → `src/app.rs::build` wires the pl
 (`telemetry → postgres → valkey → health → AppState`) → `features::registry::register_all` folds
 every feature's `di::register` (each self-gates on its `enabled` flag) into one `Wired` (merged
 axum router + accumulating tonic router) → each feature nests its routes under `/api/v1` → the
-`handler` binds the contract type, validates, calls `application::Service` → the use case parses
-ids, applies business rules, maps domain↔contract → `port::Repository` (sqlx) behind an optional
+`handler` binds the contract type, validates, calls `usecase::Service` → the use case parses
+ids, applies business rules, maps domain↔contract → `repository::Repository` (sqlx) behind an optional
 `CachedRepository` decorator (catalog, Valkey cache-aside) → domain sentinel errors are mapped to
 the HTTP envelope / gRPC status by `platform::errors::AppError`.
 
 **Dependency gates** — `tests/architecture.rs` scans the `crate::`-rooted `use` statements of every
 `src/**/*.rs` file (relative `super::`/sibling imports are intra-layer and out of scope) and
-applies 9 rules; a violation fails with `module %q violates %s`. Go rule names are shown for
-parity — use the **Rust rule names verbatim**. If a change trips a rule, **restructure the change
-— never weaken the rule**:
+applies 9 rules; a violation fails with `module %q violates %s`. Test code is exempt (whole-file
+`#[cfg(test)] mod` children and `tests/**`), mirroring the Go scanner's `_test.go` skip. Rule
+names match the Go template verbatim; if a change trips a rule, **restructure the change — never
+weaken the rule**:
 
-| Go rule | Rust rule (`tests/architecture.rs`) | Forbids |
-|---|---|---|
-| `published-contract-is-outward-only` | `published-contract-is-outward-only` | internal code importing `crate::api` |
-| `domain-is-innermost` | `domain-is-innermost` | `features/<f>/domain` depending on anything crate-internal |
-| `contract-is-leaf` | `contract-is-leaf` | `features/<f>/contract` depending on anything crate-internal |
-| `repository-interface-depends-only-on-domain` | `port-depends-only-on-domain` | `features/<f>/port` referencing anything but its own `domain` |
-| `usecase-depends-on-domain-repository-contract` | `application-depends-on-domain-port-contract` | `features/<f>/application` importing anything outside its own domain/port/contract/application |
-| `repository-impl-ignores-usecase-and-handler` | `driven-adapters-ignore-application` | `adapter/driven/**` importing `application` or `adapter/driving` |
-| `handler-ignores-repository` | `driving-adapters-ignore-ports-and-driven-adapters` | `adapter/driving/**` importing `port` or `adapter/driven` |
-| `features-registry-imports-only-own-features` | `features-registry-imports-only-own-features` | `features/mod.rs` + `features/registry.rs` reaching past a feature's module root or its `di` entry point into `domain`/`contract`/`port`/`application`/`adapter` |
-| `infrastructure-ignores-features` | `platform-ignores-features` | `platform/**` importing `features/**` |
+| Rule (`tests/architecture.rs`) | Forbids |
+|---|---|
+| `published-contract-is-outward-only` | internal code importing `crate::api` |
+| `domain-is-innermost` | `features/<f>/domain` depending on anything crate-internal |
+| `contract-is-leaf` | `features/<f>/contract` depending on anything crate-internal |
+| `repository-interface-depends-only-on-domain` | `features/<f>/repository` (the interface, excluding `repository/postgres`) referencing anything but its own `domain` |
+| `usecase-depends-on-domain-repository-contract` | `features/<f>/usecase` importing anything outside its own domain/repository-interface/contract/usecase (the `repository/postgres` implementation is denied) |
+| `repository-impl-ignores-usecase-and-handler` | `features/<f>/repository/postgres/**` importing `usecase` or `handler` |
+| `handler-ignores-repository` | `features/<f>/handler/**` importing `repository` (interface or `postgres` impl) |
+| `features-registry-imports-only-own-features` | `features/mod.rs` + `features/registry.rs` reaching past a feature's module root or its `di` entry point into `domain`/`contract`/`repository`/`usecase`/`handler` |
+| `platform-ignores-features` | `platform/**` importing `features/**` |
 
 ## Key Directories
 
@@ -70,9 +71,9 @@ parity — use the **Rust rule names verbatim**. If a change trips a rule, **res
   single place features are enumerated. Its order is also the migration order (catalog 1,
   machines 2, sales 3).
 - `src/features/{catalog,machines,sales,reporting}/` — the four demo features. Layers, each its
-  own module: `domain` (entities + sentinels), `contract` (zero-dep wire types), `port` (outbound
-  `Repository` trait), `application` (`Service` trait + `Usecase`), `adapter/driving` (axum +
-  tonic), `adapter/driven/postgres` (sqlx impl, `migrations/`), `di`. Features never import each
+  own module: `domain` (entities + sentinels), `contract` (zero-dep wire types), `repository`
+  (outbound `Repository` trait), `repository/postgres` (sqlx impl, `migrations/`), `usecase`
+  (`Service` trait + `Usecase`), `handler` (axum + tonic), `di`. Features never import each
   other; `sales` and `reporting` read other features' tables through their own repository ports.
 - `src/api/` — published surface: `v1.rs` re-exports every feature's contract types, `errcodes.rs`
   re-exports the canonical codes. Outward-only.
@@ -101,7 +102,7 @@ parity — use the **Rust rule names verbatim**. If a change trips a rule, **res
 - `task migrate-up` / `migrate-down [N=1]` — run the merged migration set via
   `cargo run --bin migrate`; `migrate-create FEATURE=<name> NAME=...` hand-writes an empty
   reversible pair with the next free global version into
-  `src/features/<FEATURE>/adapter/driven/postgres/migrations` (`sqlx migrate add -r` is the noted
+  `src/features/<FEATURE>/repository/postgres/migrations` (`sqlx migrate add -r` is the noted
   per-directory alternative when sqlx-cli is installed).
 - `task proto` — no-op; proto regeneration is handled by `build.rs` (tonic-build) on every
   `cargo build`.
@@ -121,13 +122,13 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/it_catalog \
 
 ## Code Conventions & Common Patterns
 
-- **Naming.** Layer modules are fixed lowercase nouns (`domain`, `contract`, `port`,
-  `application`, `adapter/driving`, `adapter/driven`, `di`). Ports are named by role, not feature:
-  `application::Service` (inbound), `port::Repository` (outbound). Impls: `Usecase`, `PgRepository`,
+- **Naming.** Layer modules are fixed lowercase nouns (`domain`, `contract`, `repository`,
+  `repository/postgres`, `usecase`, `handler`, `di`). Ports are named by role, not feature:
+  `usecase::Service` (inbound), `repository::Repository` (outbound). Impls: `Usecase`, `PgRepository`,
   `CachedRepository` (decorator), `Handler`, `GrpcServer`. Every feature exposes
   `di::register_with_grpc` (the registry entry point) and `di::register` (standalone test path).
 - **Ports & mocks.** Traits use `#[cfg_attr(test, automock)]` (mockall) to generate
-  `MockRepository` / `MockService`; use-case and adapter unit tests need no real DB.
+  `MockRepository` / `MockService`; use-case and handler unit tests need no real DB.
 - **Error handling.** Three tiers: (1) **domain sentinels** — a per-feature `domain::Error` enum
   (`thiserror`) in `domain/error.rs`; (2) **boundary error** — `AppError` in `platform/errors.rs`
   with `code()`/`message()`/`http_status()`/`grpc_code()`, codes from `platform::errcodes` so
@@ -142,14 +143,14 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/it_catalog \
   `CATALOG_ENABLED` / `MACHINES_ENABLED` / `SALES_ENABLED` / `REPORTING_ENABLED` gate each demo
   feature's providers and routes entirely.
 - **Persistence.** The SQL schema is owned by `sqlx::migrate!` files under
-  `adapter/driven/postgres/migrations/` (embedded at compile time). The sqlx query macros are
+  `repository/postgres/migrations/` (embedded at compile time). The sqlx query macros are
   **not** used (queries are runtime-checked `sqlx::query`), so there is **no `AutoMigrate`-equivalent
   and no offline `.sqlx` cache**: schema changes go through a migration file, never a runtime sync.
 - **Generated code — regenerate, never hand-edit.** `build.rs` runs tonic-build over every
   `proto/*/v1/*.proto` (`build_server(true)`, `build_client(false)`); the generated modules live in
   `OUT_DIR` and are pulled in by `tonic::include_proto!("catalog.v1")` (package dots become
-  underscores: `catalog_v1`) in each feature's `adapter/driving/grpc.rs`. `cargo build` regenerates.
-- **`async-trait` ports.** `port::Repository`, `application::Service`, and `platform::health::Checker`
+  underscores: `catalog_v1`) in each feature's `handler/grpc.rs`. `cargo build` regenerates.
+- **`async-trait` ports.** `repository::Repository`, `usecase::Service`, and `platform::health::Checker`
   are `#[async_trait]` traits carrying `#[allow(clippy::double_must_use)]`: the macro expansion
   wraps an already-`#[must_use]` future, which clippy flags on the macro span. The allow is
   deliberate and localized to the trait definition.
@@ -200,7 +201,7 @@ Testing & QA).
 - `tests/architecture.rs` — the 9 dependency gates (source of truth for layering).
 - `src/features/catalog/di.rs` — the canonical feature wiring: flag gate, sentinel mapping,
   repository (+ cache-aside decorator), providers, route mount.
-- `src/features/catalog/adapter/driven/cached.rs` — the cache-aside decorator (key, TTL,
+- `src/features/catalog/repository/postgres/cached.rs` — the cache-aside decorator (key, TTL,
   not-found-never-cached).
 - `src/platform/config.rs` — config struct, per-leaf env binding, `validate` / `validate_cross`.
 - `src/platform/errors.rs` — `AppError` + `errcodes` re-export + `IntoResponse` + gRPC mapper.
@@ -230,8 +231,8 @@ Testing & QA).
 
 - **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live in-module under
   `#[cfg(test)]`; they run with `cargo test --all-targets`. Integration tests are live-infra
-  suites inside `#[cfg(test)] mod integration` (catalog's in `adapter/integration.rs`, sales' and
-  reporting's at the `di` composition edge) gated by `#[ignore]`. The e2e test is
+  suites inside `#[cfg(test)] mod integration` (catalog's in `repository/postgres/integration.rs`,
+  sales' and reporting's at the `di` composition edge) gated by `#[ignore]`. The e2e test is
   `tests/e2e.rs`.
 - **Ignore-gating = Go build tags.** Every live-infra test is `#[ignore]`; plain `cargo test`
   compiles but does not run it. `--include-ignored` runs the full live suite (CI integration job).
@@ -256,11 +257,11 @@ Testing & QA).
 
 ## Gotchas
 
-- **`clippy::double_must_use` on async-trait ports.** The `#[allow]` on `port::Repository` /
-  `application::Service` / `health::Checker` is required, not a mistake — `async-trait` 0.1.89
+- **`clippy::double_must_use` on async-trait ports.** The `#[allow]` on `repository::Repository` /
+  `usecase::Service` / `health::Checker` is required, not a mistake — `async-trait` 0.1.89
   expands the async method to an already-`#[must_use]` future, which clippy flags on the macro
   span. Do not "fix" it by removing the trait's async.
-- **Generated proto lives in `OUT_DIR`.** Each feature's `adapter/driving/grpc.rs` calls
+- **Generated proto lives in `OUT_DIR`.** Each feature's `handler/grpc.rs` calls
   `tonic::include_proto!("<package>")`; the package dots become underscores (`catalog.v1` →
   `catalog_v1`). Never hand-edit generated code — change the `.proto` and rebuild.
 - **Feature gating defaults to `false`.** `CatalogConfig`/`MachinesConfig`/`SalesConfig`/

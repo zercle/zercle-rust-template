@@ -111,7 +111,7 @@ tasks:
   migrate-create:
     desc: >-
       Create a reversible migration pair under
-      src/features/<FEATURE>/adapter/driven/postgres/migrations/ using the next free GLOBAL
+      src/features/<FEATURE>/repository/postgres/migrations/ using the next free GLOBAL
       version number across all features (versions are one namespace, port-spec §1).
       Usage: `task migrate-create FEATURE=catalog NAME=add_discount`.
     dotenv: ['.env']
@@ -123,12 +123,12 @@ tasks:
             echo "usage: task migrate-create FEATURE=<feature> NAME=<migration_name>" >&2
             exit 1
           fi
-          dir="src/features/{{.FEATURE}}/adapter/driven/postgres/migrations"
+          dir="src/features/{{.FEATURE}}/repository/postgres/migrations"
           if [ ! -d "$dir" ]; then
             echo "no migrations directory for feature '{{.FEATURE}}': $dir" >&2
             exit 1
           fi
-          last=$(ls src/features/*/adapter/driven/postgres/migrations/*.sql 2>/dev/null \
+          last=$(ls src/features/*/repository/postgres/migrations/*.sql 2>/dev/null \
             | sed -E 's#.*/##; s/^0*([0-9]+)_.*/\1/' \
             | sort -n | tail -1)
           next=$(printf '%06d' "$(( ${last:-0} + 1 ))")

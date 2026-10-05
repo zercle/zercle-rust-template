@@ -1,6 +1,6 @@
 //! Composition point for the reporting feature (Go `reporting/di/di.go`
-//! parity, port-spec §5.4i). Builds the driven read-only postgres adapter, the
-//! use case, and the axum + tonic driving adapters, and registers the domain
+//! parity, port-spec §5.4i). Builds the read-only postgres repository, the
+//! use case, and the axum + tonic handlers, and registers the domain
 //! sentinel → boundary error mapping.
 //!
 //! The feature registry ([`crate::features::registry`]) drives
@@ -15,10 +15,10 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
-use crate::features::reporting::adapter::driven::postgres::PgRepository;
-use crate::features::reporting::adapter::driving::{grpc, http};
-use crate::features::reporting::application::{Service, Usecase};
 use crate::features::reporting::domain::Error;
+use crate::features::reporting::handler::{grpc, http};
+use crate::features::reporting::repository::postgres::PgRepository;
+use crate::features::reporting::usecase::{Service, Usecase};
 use crate::platform::config::Config;
 use crate::platform::errors::AppError;
 use crate::platform::server::GrpcRouter;
@@ -158,8 +158,8 @@ reporting: {{ enabled: {enabled} }}
 
 /// Live-DB integration suite for the reporting read-only edge. Lives at the
 /// composition root (the only reporting module allowed to import both the
-/// driven adapter and the application layer); the architecture test forbids
-/// `adapter/driven` from knowing the application layer.
+/// postgres repository and the usecase layer); the architecture test forbids
+/// `repository/postgres` from knowing the usecase layer.
 #[cfg(test)]
 mod integration {
     use once_cell::sync::Lazy;
@@ -168,11 +168,11 @@ mod integration {
     use tokio::sync::Mutex;
     use uuid::Uuid;
 
-    use crate::features::reporting::adapter::driven::postgres::PgRepository;
-    use crate::features::reporting::application::{Service, Usecase};
     use crate::features::reporting::contract::SummaryRequest;
     use crate::features::reporting::domain::{Error, Overview};
-    use crate::features::reporting::port::Repository;
+    use crate::features::reporting::repository::Repository;
+    use crate::features::reporting::repository::postgres::PgRepository;
+    use crate::features::reporting::usecase::{Service, Usecase};
     use std::sync::Arc;
 
     /// Serializes the cases: they share one database and TRUNCATE each other's

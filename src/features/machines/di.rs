@@ -1,6 +1,6 @@
 //! Composition point for the machines feature (Go `machines/di/di.go` parity,
-//! port-spec §5.2i): builds the driven adapter, the use case, and the driving
-//! adapters, and registers the domain sentinel → boundary error mapping.
+//! port-spec §5.2i): builds the postgres repository, the use case, and the
+//! handlers, and registers the domain sentinel → boundary error mapping.
 //!
 //! Sentinel mapping (Go §3, registration order):
 //! `ErrMachineNotFound -> NOT_FOUND`; `ErrInvalidId`,
@@ -16,10 +16,10 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
-use crate::features::machines::adapter::driven::postgres::PgRepository;
-use crate::features::machines::adapter::driving::{grpc, http};
-use crate::features::machines::application::{Service, Usecase};
 use crate::features::machines::domain::Error;
+use crate::features::machines::handler::{grpc, http};
+use crate::features::machines::repository::postgres::PgRepository;
+use crate::features::machines::usecase::{Service, Usecase};
 use crate::platform::config::Config;
 use crate::platform::errors::AppError;
 use crate::platform::server::GrpcRouter;
@@ -77,7 +77,7 @@ pub fn register_with_grpc(
 /// Embedded migrations this feature owns (Go `Migrations fs.FS` parity):
 /// machines owns version 2.
 pub fn migrations() -> Vec<sqlx::migrate::Migration> {
-    sqlx::migrate!("./src/features/machines/adapter/driven/postgres/migrations")
+    sqlx::migrate!("./src/features/machines/repository/postgres/migrations")
         .iter()
         .cloned()
         .collect()

@@ -6,7 +6,7 @@ use uuid::Uuid;
 /// A sellable product.
 ///
 /// Field-for-field parity with Go `domain.Product`; richer behavior (name/price
-/// validation, timestamps) lives in `application::usecase`.
+/// validation, timestamps) lives in `usecase::usecase`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Product {
     pub id: Uuid,

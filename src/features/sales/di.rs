@@ -13,10 +13,10 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
-use crate::features::sales::adapter::driven::postgres::PgRepository;
-use crate::features::sales::adapter::driving::{grpc, http};
-use crate::features::sales::application::{Service, Usecase};
 use crate::features::sales::domain::Error;
+use crate::features::sales::handler::{grpc, http};
+use crate::features::sales::repository::postgres::PgRepository;
+use crate::features::sales::usecase::{Service, Usecase};
 use crate::platform::config::Config;
 use crate::platform::errors::AppError;
 use crate::platform::server::GrpcRouter;
@@ -81,7 +81,7 @@ fn build(db: PgPool, grpc: GrpcRouter) -> Wired {
 /// Embedded migrations this feature owns (Go `Migrations fs.FS` parity): sales
 /// owns version 3.
 pub fn migrations() -> Vec<sqlx::migrate::Migration> {
-    sqlx::migrate!("./src/features/sales/adapter/driven/postgres/migrations")
+    sqlx::migrate!("./src/features/sales/repository/postgres/migrations")
         .iter()
         .cloned()
         .collect()

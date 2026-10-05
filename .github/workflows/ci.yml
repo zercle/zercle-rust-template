@@ -193,7 +193,7 @@ jobs:
         run: cargo run --locked --bin migrate -- up
       - name: Run integration tests
         # Full suite against the service containers: the #[ignore]-gated
-        # live-infra tests (db, valkey, adapter roundtrip) plus the
+        # live-infra tests (db, valkey, repository roundtrip) plus the
         # self-skipping HTTP integration test and the e2e server test,
         # which no longer skip because infra IS reachable here.
         run: cargo test --all-targets --locked -- --include-ignored --test-threads=1
