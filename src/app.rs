@@ -5,9 +5,9 @@
 //! 2. PostgreSQL pool + readiness checker.
 //! 3. Valkey client + readiness checker.
 //! 4. [`AppState`] assembly.
-//! 5. Feature wiring — the only feature symbol referenced anywhere outside the
-//!    feature is `features::example::di`; adding a feature means adding one
-//!    `di::register` call here.
+//! 5. Feature wiring — delegated to [`crate::features::registry::register_all`];
+//!    adding a feature means adding one entry to the registry, never touching
+//!    this file.
 //!
 //! [`run`](app::run) then delegates to [`platform::server::run`] which starts
 //! axum + tonic and orchestrates the ordered graceful shutdown.
@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use axum::Router;
 
-use crate::features::example::di as example_di;
+use crate::features::registry;
 use crate::platform::{
     config::Config,
     db::{PgChecker, new_pool},
@@ -86,7 +86,7 @@ pub async fn build(cfg: Config) -> anyhow::Result<Built> {
         health: Arc::new(health),
     };
 
-    let wired = example_di::register(&state.cfg, state.db.clone());
+    let wired = registry::register_all(&state.cfg, state.db.clone(), state.valkey.clone());
 
     Ok(Built {
         state,

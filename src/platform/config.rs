@@ -14,6 +14,33 @@ fn parse_humantime(field: &str, raw: &str) -> anyhow::Result<Duration> {
     humantime::parse_duration(raw).with_context(|| format!("invalid duration for {field}: {raw:?}"))
 }
 
+// Feature defaults mirror Go `setDefaults` (port-spec §4): applied when the
+// yaml/env key is absent so a section may appear partially (or not at all).
+fn default_page_size() -> u32 {
+    20
+}
+fn default_max_page_size() -> u32 {
+    100
+}
+fn default_max_name_length() -> u32 {
+    255
+}
+fn default_max_label_length() -> u32 {
+    255
+}
+fn default_top_machines() -> u32 {
+    5
+}
+fn default_max_top_machines() -> u32 {
+    20
+}
+
+// Upper bounds mirroring Go `config` (port-spec §4).
+const MAX_PAGE_SIZE_UPPER_BOUND: u32 = 1000;
+const MAX_NAME_LENGTH_UPPER_BOUND: u32 = 4096;
+const MAX_LABEL_LENGTH_UPPER_BOUND: u32 = 4096;
+const MAX_TOP_MACHINES_UPPER_BOUND: u32 = 100;
+
 /// Top-level configuration.
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct Config {
@@ -33,6 +60,18 @@ pub struct Config {
     pub log: LogConfig,
     #[validate(nested)]
     pub example: ExampleConfig,
+    #[serde(default)]
+    #[validate(nested)]
+    pub catalog: CatalogConfig,
+    #[serde(default)]
+    #[validate(nested)]
+    pub machines: MachinesConfig,
+    #[serde(default)]
+    #[validate(nested)]
+    pub sales: SalesConfig,
+    #[serde(default)]
+    #[validate(nested)]
+    pub reporting: ReportingConfig,
 }
 
 /// Process-level settings.
@@ -148,17 +187,102 @@ pub struct LogConfig {
     pub format: String,
 }
 
-/// Stub feature toggle + settings.
+/// Stub feature toggle + settings (kept while the `example` feature is wired
+/// through the registry; replaced by the four demo feature sections later).
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct ExampleConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default = "default_page_size")]
     #[validate(range(min = 1))]
     pub default_page_size: u32,
+    #[serde(default = "default_max_page_size")]
     #[validate(range(min = 1))]
     pub max_page_size: u32,
+    #[serde(default = "default_max_name_length")]
     #[validate(range(min = 1))]
     pub max_name_length: u32,
+}
+
+/// catalog feature settings (Go `CatalogConfig`, port-spec §4). `enabled`
+/// defaults to false; the yaml `catalog:` section is owned by a later wave, so
+/// today's `config.yaml` omits it and these defaults apply.
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct CatalogConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_page_size")]
+    pub default_page_size: u32,
+    #[serde(default = "default_max_page_size")]
+    pub max_page_size: u32,
+    #[serde(default = "default_max_name_length")]
+    pub max_name_length: u32,
+}
+
+/// machines feature settings (Go `MachinesConfig`, port-spec §4).
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct MachinesConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_page_size")]
+    pub default_page_size: u32,
+    #[serde(default = "default_max_page_size")]
+    pub max_page_size: u32,
+    #[serde(default = "default_max_label_length")]
+    pub max_label_length: u32,
+}
+
+/// sales feature settings (Go `SalesConfig`, port-spec §4) — toggle only.
+#[derive(Debug, Clone, Default, Deserialize, Validate)]
+pub struct SalesConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// reporting feature settings (Go `ReportingConfig`, port-spec §4).
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ReportingConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_top_machines")]
+    pub default_top_machines: u32,
+    #[serde(default = "default_max_top_machines")]
+    pub max_top_machines: u32,
+}
+
+// Defaults for a wholly absent yaml section, matching the per-field serde
+// defaults above and Go `setDefaults` (port-spec §4). Feature `enabled` is
+// false by default, so absent sections register nothing.
+impl Default for CatalogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            default_page_size: default_page_size(),
+            max_page_size: default_max_page_size(),
+            max_name_length: default_max_name_length(),
+        }
+    }
+}
+
+impl Default for MachinesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            default_page_size: default_page_size(),
+            max_page_size: default_max_page_size(),
+            max_label_length: default_max_label_length(),
+        }
+    }
+}
+
+impl Default for ReportingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            default_top_machines: default_top_machines(),
+            max_top_machines: default_max_top_machines(),
+        }
+    }
 }
 
 impl Config {
@@ -316,8 +440,98 @@ impl Config {
                 return Err(anyhow!("{field} must be > 0"));
             }
         }
+        // Per-feature checks run only when the feature is enabled (Go
+        // `Config.Validate`, port-spec §4).
+        if self.catalog.enabled {
+            validate_catalog(&self.catalog)?;
+        }
+        if self.machines.enabled {
+            validate_machines(&self.machines)?;
+        }
+        if self.reporting.enabled {
+            validate_reporting(&self.reporting)?;
+        }
         Ok(())
     }
+}
+
+/// catalog limit checks (Go `validateCatalog`, port-spec §4).
+fn validate_catalog(c: &CatalogConfig) -> anyhow::Result<()> {
+    if c.default_page_size < 1 {
+        return Err(anyhow!("CATALOG_DEFAULT_PAGE_SIZE must be >= 1"));
+    }
+    if c.max_page_size < 1 {
+        return Err(anyhow!("CATALOG_MAX_PAGE_SIZE must be >= 1"));
+    }
+    if c.max_name_length < 1 {
+        return Err(anyhow!("CATALOG_MAX_NAME_LENGTH must be >= 1"));
+    }
+    if c.default_page_size > c.max_page_size {
+        return Err(anyhow!(
+            "CATALOG_DEFAULT_PAGE_SIZE must be <= CATALOG_MAX_PAGE_SIZE"
+        ));
+    }
+    if c.max_page_size > MAX_PAGE_SIZE_UPPER_BOUND {
+        return Err(anyhow!(
+            "CATALOG_MAX_PAGE_SIZE exceeds maximum allowed value {MAX_PAGE_SIZE_UPPER_BOUND}"
+        ));
+    }
+    if c.max_name_length > MAX_NAME_LENGTH_UPPER_BOUND {
+        return Err(anyhow!(
+            "CATALOG_MAX_NAME_LENGTH exceeds maximum allowed value {MAX_NAME_LENGTH_UPPER_BOUND}"
+        ));
+    }
+    Ok(())
+}
+
+/// machines limit checks (Go `validateMachines`, port-spec §4).
+fn validate_machines(m: &MachinesConfig) -> anyhow::Result<()> {
+    if m.default_page_size < 1 {
+        return Err(anyhow!("MACHINES_DEFAULT_PAGE_SIZE must be >= 1"));
+    }
+    if m.max_page_size < 1 {
+        return Err(anyhow!("MACHINES_MAX_PAGE_SIZE must be >= 1"));
+    }
+    if m.max_label_length < 1 {
+        return Err(anyhow!("MACHINES_MAX_LABEL_LENGTH must be >= 1"));
+    }
+    if m.default_page_size > m.max_page_size {
+        return Err(anyhow!(
+            "MACHINES_DEFAULT_PAGE_SIZE must be <= MACHINES_MAX_PAGE_SIZE"
+        ));
+    }
+    if m.max_page_size > MAX_PAGE_SIZE_UPPER_BOUND {
+        return Err(anyhow!(
+            "MACHINES_MAX_PAGE_SIZE exceeds maximum allowed value {MAX_PAGE_SIZE_UPPER_BOUND}"
+        ));
+    }
+    if m.max_label_length > MAX_LABEL_LENGTH_UPPER_BOUND {
+        return Err(anyhow!(
+            "MACHINES_MAX_LABEL_LENGTH exceeds maximum allowed value {MAX_LABEL_LENGTH_UPPER_BOUND}"
+        ));
+    }
+    Ok(())
+}
+
+/// reporting limit checks (Go `validateReporting`, port-spec §4).
+fn validate_reporting(r: &ReportingConfig) -> anyhow::Result<()> {
+    if r.default_top_machines < 1 {
+        return Err(anyhow!("REPORTING_DEFAULT_TOP_MACHINES must be >= 1"));
+    }
+    if r.max_top_machines < 1 {
+        return Err(anyhow!("REPORTING_MAX_TOP_MACHINES must be >= 1"));
+    }
+    if r.default_top_machines > r.max_top_machines {
+        return Err(anyhow!(
+            "REPORTING_DEFAULT_TOP_MACHINES must be <= REPORTING_MAX_TOP_MACHINES"
+        ));
+    }
+    if r.max_top_machines > MAX_TOP_MACHINES_UPPER_BOUND {
+        return Err(anyhow!(
+            "REPORTING_MAX_TOP_MACHINES exceeds maximum allowed value {MAX_TOP_MACHINES_UPPER_BOUND}"
+        ));
+    }
+    Ok(())
 }
 
 /// Return the `CONFIG_FILE` env override path, if set and non-empty.
@@ -390,6 +604,21 @@ fn leaf_bindings() -> Vec<(&'static str, &'static str)> {
         ("example.default_page_size", "EXAMPLE_DEFAULT_PAGE_SIZE"),
         ("example.max_page_size", "EXAMPLE_MAX_PAGE_SIZE"),
         ("example.max_name_length", "EXAMPLE_MAX_NAME_LENGTH"),
+        ("catalog.enabled", "CATALOG_ENABLED"),
+        ("catalog.default_page_size", "CATALOG_DEFAULT_PAGE_SIZE"),
+        ("catalog.max_page_size", "CATALOG_MAX_PAGE_SIZE"),
+        ("catalog.max_name_length", "CATALOG_MAX_NAME_LENGTH"),
+        ("machines.enabled", "MACHINES_ENABLED"),
+        ("machines.default_page_size", "MACHINES_DEFAULT_PAGE_SIZE"),
+        ("machines.max_page_size", "MACHINES_MAX_PAGE_SIZE"),
+        ("machines.max_label_length", "MACHINES_MAX_LABEL_LENGTH"),
+        ("sales.enabled", "SALES_ENABLED"),
+        ("reporting.enabled", "REPORTING_ENABLED"),
+        (
+            "reporting.default_top_machines",
+            "REPORTING_DEFAULT_TOP_MACHINES",
+        ),
+        ("reporting.max_top_machines", "REPORTING_MAX_TOP_MACHINES"),
     ]
 }
 
@@ -513,6 +742,72 @@ example:
             .replace("min_conns: 2", "min_conns: 5");
         let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
         assert!(cfg.validate_cross().is_err());
+    }
+
+    #[test]
+    fn feature_sections_default_to_disabled_when_absent() {
+        // A yaml with no catalog/machines/sales/reporting sections still
+        // deserializes; the sections default to Go `setDefaults` values.
+        let cfg: Config = from_yaml_str(sample_yaml()).try_deserialize().unwrap();
+        assert!(!cfg.catalog.enabled);
+        assert!(!cfg.machines.enabled);
+        assert!(!cfg.sales.enabled);
+        assert!(!cfg.reporting.enabled);
+        assert_eq!(cfg.catalog.default_page_size, 20);
+        assert_eq!(cfg.catalog.max_page_size, 100);
+        assert_eq!(cfg.catalog.max_name_length, 255);
+        assert_eq!(cfg.machines.max_label_length, 255);
+        assert_eq!(cfg.reporting.default_top_machines, 5);
+        assert_eq!(cfg.reporting.max_top_machines, 20);
+        cfg.validate_cross()
+            .expect("absent feature sections are valid");
+    }
+
+    #[test]
+    fn validate_cross_checks_enabled_catalog_limits() {
+        let yaml = format!(
+            "{}\ncatalog:\n  enabled: true\n  default_page_size: 50\n  max_page_size: 10\n",
+            sample_yaml()
+        );
+        let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
+        let err = cfg.validate_cross().unwrap_err().to_string();
+        assert!(
+            err.contains("CATALOG_DEFAULT_PAGE_SIZE must be <= CATALOG_MAX_PAGE_SIZE"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn validate_cross_ignores_disabled_feature_limits() {
+        // Same invalid limits as above, but disabled -> not checked (Go §4).
+        let yaml = format!(
+            "{}\ncatalog:\n  enabled: false\n  default_page_size: 50\n  max_page_size: 10\n",
+            sample_yaml()
+        );
+        let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
+        cfg.validate_cross()
+            .expect("disabled feature limits are not checked");
+    }
+
+    #[test]
+    fn leaf_bindings_cover_feature_sections() {
+        let b = leaf_bindings();
+        for (key, env) in [
+            ("catalog.enabled", "CATALOG_ENABLED"),
+            ("catalog.max_name_length", "CATALOG_MAX_NAME_LENGTH"),
+            ("machines.max_label_length", "MACHINES_MAX_LABEL_LENGTH"),
+            ("sales.enabled", "SALES_ENABLED"),
+            (
+                "reporting.default_top_machines",
+                "REPORTING_DEFAULT_TOP_MACHINES",
+            ),
+            ("reporting.max_top_machines", "REPORTING_MAX_TOP_MACHINES"),
+        ] {
+            assert!(
+                b.iter().any(|(k, e)| *k == key && *e == env),
+                "missing leaf binding {key} -> {env}"
+            );
+        }
     }
 
     #[test]

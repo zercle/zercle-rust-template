@@ -6,4 +6,5 @@
 //! outward-only (enforced by `tests/architecture.rs`:
 //! published-contract-is-outward-only).
 
+pub mod errcodes;
 pub mod v1;
