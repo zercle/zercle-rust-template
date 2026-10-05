@@ -1,4 +1,5 @@
-//! Driven (outbound) adapters for sales. `postgres.rs` lands in the next wave;
-//! migration SQL is owned here under `postgres/migrations/`.
+//! Driven (outbound) adapters for sales: `postgres.rs` implements the
+//! cross-feature `port::Repository`. Migration SQL is owned under
+//! `postgres/migrations/`.
 
 pub mod postgres;
