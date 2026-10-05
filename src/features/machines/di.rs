@@ -1,9 +1,14 @@
-//! Composition point for the machines feature (Go `machines/di/di.go` parity).
-//! Warn-only stub this wave; sentinel mapping registered now.
+//! Composition point for the machines feature (Go `machines/di/di.go` parity,
+//! port-spec §5.2i): builds the driven adapter, the use case, and the driving
+//! adapters, and registers the domain sentinel → boundary error mapping.
 //!
 //! Sentinel mapping (Go §3, registration order):
 //! `ErrMachineNotFound -> NOT_FOUND`; `ErrInvalidId`,
 //! `ErrInvalidMachineLabel`, `ErrUnsupportedCoin` → `INVALID_INPUT`.
+//!
+//! The feature registry ([`crate::features::registry`]) drives
+//! [`register_with_grpc`]; [`register`] is the standalone convenience path used
+//! by tests that only need the HTTP router.
 
 use std::sync::Arc;
 
@@ -11,6 +16,9 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
+use crate::features::machines::adapter::driven::postgres::PgRepository;
+use crate::features::machines::adapter::driving::{grpc, http};
+use crate::features::machines::application::{Service, Usecase};
 use crate::features::machines::domain::Error;
 use crate::platform::config::Config;
 use crate::platform::errors::AppError;
@@ -29,25 +37,31 @@ impl From<Error> for AppError {
     }
 }
 
-/// Wire the machines feature standalone. Gated on `machines.enabled`.
-pub fn register(cfg: &Config, _db: PgPool) -> Wired {
+/// Wire the machines feature standalone: postgres repository → use case → HTTP
+/// and gRPC adapters, starting from an empty platform gRPC router. Mirrors Go
+/// `di.Register`; used by tests and one-off callers.
+///
+/// Gated on `machines.enabled` (Go §5.2i): a disabled feature registers nothing.
+pub fn register(cfg: &Config, db: PgPool) -> Wired {
     if !cfg.machines.enabled {
         return Wired {
             http: Router::new(),
             grpc: crate::platform::server::empty_grpc_router(),
         };
     }
-    warn_unwired();
-    Wired {
-        http: Router::new(),
-        grpc: crate::platform::server::empty_grpc_router(),
-    }
+    build(cfg, db, crate::platform::server::empty_grpc_router())
 }
 
-/// Registry entry point (see [`crate::features::registry::RegisterFn`]).
+/// Registry entry point (see [`crate::features::registry::RegisterFn`]): wire
+/// the feature onto the accumulating gRPC router the registry threads through
+/// every feature. `valkey` is unused (machines owns no cache); it is part of
+/// the uniform feature signature.
+///
+/// Gated on `machines.enabled` (Go §5.2i): when disabled it contributes no
+/// routes and leaves the gRPC router untouched.
 pub fn register_with_grpc(
     cfg: &Arc<Config>,
-    _db: PgPool,
+    db: PgPool,
     _valkey: ConnectionManager,
     grpc: GrpcRouter,
 ) -> Wired {
@@ -57,11 +71,7 @@ pub fn register_with_grpc(
             grpc,
         };
     }
-    warn_unwired();
-    Wired {
-        http: Router::new(),
-        grpc,
-    }
+    build(cfg, db, grpc)
 }
 
 /// Embedded migrations this feature owns (Go `Migrations fs.FS` parity):
@@ -73,8 +83,25 @@ pub fn migrations() -> Vec<sqlx::migrate::Migration> {
         .collect()
 }
 
-fn warn_unwired() {
-    tracing::warn!("machines feature IO edge (postgres/http/grpc) not yet wired");
+fn build(cfg: &Config, db: PgPool, grpc: GrpcRouter) -> Wired {
+    let repo = Arc::new(PgRepository::new(db));
+    let service: Arc<dyn Service> = Arc::new(Usecase::new(
+        repo,
+        clamp_i32(cfg.machines.default_page_size),
+        clamp_i32(cfg.machines.max_page_size),
+        clamp_i32(cfg.machines.max_label_length),
+    ));
+
+    let http = Router::new().nest("/api/v1", http::routes(service.clone()));
+    let grpc = grpc.add_service(grpc::server(grpc::GrpcServer::new(service)));
+
+    Wired { http, grpc }
+}
+
+/// Config limits are validated `>= 1` u32s; clamp to i32 for the port boundary
+/// (Go carries them as int32).
+fn clamp_i32(v: u32) -> i32 {
+    i32::try_from(v).unwrap_or(i32::MAX)
 }
 
 #[cfg(test)]
@@ -132,8 +159,11 @@ machines: {{ enabled: {enabled} }}
     }
 
     #[tokio::test]
-    async fn enabled_feature_still_registers_no_routes_this_wave() {
+    async fn enabled_feature_registers_routes() {
         let wired = register(&cfg_enabled(true), lazy_pool());
-        assert!(!wired.http.has_routes(), "IO edge is a stub this wave");
+        assert!(
+            wired.http.has_routes(),
+            "enabled feature mounts its /api/v1 routes"
+        );
     }
 }
