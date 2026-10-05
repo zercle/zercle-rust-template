@@ -1,8 +1,9 @@
 //! Composition point for the catalog feature (Go `catalog/di/di.go` parity).
-//! This wave the IO edge is a stub: `register` / `register_with_grpc` honor the
-//! `catalog.enabled` gate, register the domain sentinels, then warn that the
-//! postgres + HTTP/gRPC edge is not yet wired. The next wave replaces the
-//! warning with adapter construction.
+//! Honors the `catalog.enabled` gate (a disabled feature registers nothing),
+//! builds the driven adapter (`PgRepository`, wrapped in the cache-aside
+//! `CachedRepository` when the registry passes the Valkey connection), the
+//! use case with the configured limits, and mounts the axum + tonic driving
+//! adapters under `/api/v1`.
 //!
 //! Sentinel mapping (Go `apperrors.RegisterSentinel(domain.ErrX, apperrors.ErrY)`,
 //! port-spec §3) is the crate-global [`From<Error> for AppError`] impl at this
@@ -14,7 +15,14 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
+use crate::features::catalog::adapter::driven::cached::{
+    CachedRepository, DEFAULT_PRODUCT_CACHE_TTL,
+};
+use crate::features::catalog::adapter::driven::postgres::PgRepository;
+use crate::features::catalog::adapter::driving::{grpc, http};
+use crate::features::catalog::application::{Service, Usecase};
 use crate::features::catalog::domain::Error;
+use crate::features::catalog::port::Repository;
 use crate::platform::config::Config;
 use crate::platform::errors::AppError;
 use crate::platform::server::GrpcRouter;
@@ -22,9 +30,6 @@ pub use crate::platform::server::Wired;
 
 /// Catalog sentinel → boundary error mapping (Go registration order §3):
 /// `ErrProductNotFound -> NOT_FOUND`; the other three → `INVALID_INPUT`.
-///
-/// Inert until an adapter can produce a `domain::Error`; registered now so the
-/// next wave's adapters can rely on `AppError::from`.
 impl From<Error> for AppError {
     fn from(err: Error) -> Self {
         match err {
@@ -37,41 +42,70 @@ impl From<Error> for AppError {
     }
 }
 
-/// Wire the catalog feature standalone. Gated on `catalog.enabled` (Go §5.1i):
-/// a disabled feature registers nothing.
-pub fn register(cfg: &Config, _db: PgPool) -> Wired {
+/// Wire the catalog feature standalone (no cache-aside): postgres repository →
+/// use case → HTTP + gRPC adapters, starting from an empty platform gRPC
+/// router. Gated on `catalog.enabled` (Go §5.1i): a disabled feature registers
+/// nothing.
+pub fn register(cfg: &Config, db: PgPool) -> Wired {
     if !cfg.catalog.enabled {
-        return Wired {
-            http: Router::new(),
-            grpc: crate::platform::server::empty_grpc_router(),
-        };
+        return empty_wired(crate::platform::server::empty_grpc_router());
     }
-    warn_unwired();
-    Wired {
-        http: Router::new(),
-        grpc: crate::platform::server::empty_grpc_router(),
-    }
+    let repo: Arc<dyn Repository> = Arc::new(PgRepository::new(db));
+    build(cfg, repo, crate::platform::server::empty_grpc_router())
 }
 
 /// Registry entry point (see [`crate::features::registry::RegisterFn`]). Gated
 /// on `catalog.enabled`; disabled leaves the accumulating gRPC router untouched.
+///
+/// When enabled, wraps the postgres repository in the cache-aside
+/// [`CachedRepository`] over the shared Valkey connection (Go §5.1i: the
+/// registry-provided cache-aside client decorates the repository).
 pub fn register_with_grpc(
     cfg: &Arc<Config>,
-    _db: PgPool,
-    _valkey: ConnectionManager,
+    db: PgPool,
+    valkey: ConnectionManager,
     grpc: GrpcRouter,
 ) -> Wired {
     if !cfg.catalog.enabled {
-        return Wired {
-            http: Router::new(),
-            grpc,
-        };
+        return empty_wired(grpc);
     }
-    warn_unwired();
+    let postgres: Arc<dyn Repository> = Arc::new(PgRepository::new(db));
+    let repo: Arc<dyn Repository> = Arc::new(CachedRepository::new(
+        postgres,
+        valkey,
+        DEFAULT_PRODUCT_CACHE_TTL,
+    ));
+    build(cfg, repo, grpc)
+}
+
+/// A disabled feature contributes nothing (empty HTTP router, gRPC router
+/// untouched) — Go's `di.Register` returning early.
+fn empty_wired(grpc: GrpcRouter) -> Wired {
     Wired {
         http: Router::new(),
         grpc,
     }
+}
+
+/// Build the use case + driving adapters for an already-chosen repository.
+fn build(cfg: &Config, repo: Arc<dyn Repository>, grpc: GrpcRouter) -> Wired {
+    let service: Arc<dyn Service> = Arc::new(Usecase::new(
+        repo,
+        clamp_i32(cfg.catalog.default_page_size),
+        clamp_i32(cfg.catalog.max_page_size),
+        clamp_i32(cfg.catalog.max_name_length),
+    ));
+
+    let http = Router::new().nest("/api/v1", http::routes(service.clone()));
+    let grpc = grpc.add_service(grpc::server(grpc::GrpcServer::new(service)));
+
+    Wired { http, grpc }
+}
+
+/// Config limits are `u32`; the use case speaks `i32`. Saturate rather than
+/// wrap (validation bounds these well below `i32::MAX` anyway).
+fn clamp_i32(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 /// Embedded migrations this feature owns, in the single global version
@@ -82,10 +116,6 @@ pub fn migrations() -> Vec<sqlx::migrate::Migration> {
         .iter()
         .cloned()
         .collect()
-}
-
-fn warn_unwired() {
-    tracing::warn!("catalog feature IO edge (postgres/http/grpc) not yet wired");
 }
 
 #[cfg(test)]
@@ -144,8 +174,9 @@ catalog: {{ enabled: {enabled} }}
     }
 
     #[tokio::test]
-    async fn enabled_feature_still_registers_no_routes_this_wave() {
+    async fn enabled_feature_registers_http_routes() {
+        // The lazy pool never connects; `register` only constructs adapters.
         let wired = register(&cfg_enabled(true), lazy_pool());
-        assert!(!wired.http.has_routes(), "IO edge is a stub this wave");
+        assert!(wired.http.has_routes(), "enabled catalog mounts /api/v1");
     }
 }
