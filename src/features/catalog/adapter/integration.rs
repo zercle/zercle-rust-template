@@ -251,9 +251,8 @@ async fn http_get_unknown_id_returns_not_found_envelope() {
     assert_eq!(json["message"], "resource not found");
 }
 
-/// Keeps the spec's default TTL in view; documents the crate divergence where
-/// `ValkeyConfig` exposes no `ttl`, so this constant stands in for
-/// `cfg.valkey.ttl`.
+/// Keeps the fallback default TTL in view: the constant mirrors the spec §5.1j
+/// default, while the wired TTL comes from `cfg.valkey_ttl()` (`valkey.ttl`).
 #[test]
 fn default_cache_ttl_matches_spec_default() {
     assert_eq!(DEFAULT_PRODUCT_CACHE_TTL, Duration::from_secs(30));

@@ -15,9 +15,7 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
-use crate::features::catalog::adapter::driven::cached::{
-    CachedRepository, DEFAULT_PRODUCT_CACHE_TTL,
-};
+use crate::features::catalog::adapter::driven::cached::CachedRepository;
 use crate::features::catalog::adapter::driven::postgres::PgRepository;
 use crate::features::catalog::adapter::driving::{grpc, http};
 use crate::features::catalog::application::{Service, Usecase};
@@ -70,11 +68,8 @@ pub fn register_with_grpc(
         return empty_wired(grpc);
     }
     let postgres: Arc<dyn Repository> = Arc::new(PgRepository::new(db));
-    let repo: Arc<dyn Repository> = Arc::new(CachedRepository::new(
-        postgres,
-        valkey,
-        DEFAULT_PRODUCT_CACHE_TTL,
-    ));
+    let repo: Arc<dyn Repository> =
+        Arc::new(CachedRepository::new(postgres, valkey, cfg.valkey_ttl()));
     build(cfg, repo, grpc)
 }
 

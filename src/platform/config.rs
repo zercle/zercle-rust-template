@@ -34,6 +34,10 @@ fn default_top_machines() -> u32 {
 fn default_max_top_machines() -> u32 {
     20
 }
+// Go `setDefaults` valkey.ttl=30s (port-spec §4).
+fn default_valkey_ttl() -> String {
+    "30s".to_string()
+}
 
 // Upper bounds mirroring Go `config` (port-spec §4).
 const MAX_PAGE_SIZE_UPPER_BOUND: u32 = 1000;
@@ -161,6 +165,11 @@ pub struct ValkeyConfig {
     pub db: u8,
     #[serde(default)]
     pub connect_timeout: String,
+    /// Cache-entry TTL (Go `ValkeyConfig.TTL`, port-spec §4). Human-friendly
+    /// duration string ("30s", "5m"), consumed by the catalog cache-aside
+    /// decorator; absent falls back to `setDefaults`' `30s`.
+    #[serde(default = "default_valkey_ttl")]
+    pub ttl: String,
 }
 
 /// OpenTelemetry exporter settings.
@@ -384,6 +393,15 @@ impl Config {
             .expect("validated in validate_cross")
     }
 
+    /// Cache-entry TTL (Go `cfg.Valkey.TTL`). An empty value falls back to the
+    /// `setDefaults` default of 30 seconds (Go `omitempty`).
+    pub fn valkey_ttl(&self) -> Duration {
+        if self.valkey.ttl.is_empty() {
+            return Duration::from_secs(30);
+        }
+        parse_humantime("valkey.ttl", &self.valkey.ttl).expect("validated in validate_cross")
+    }
+
     /// Cross-section checks in addition to `validator::Validate`.
     pub fn validate_cross(&self) -> anyhow::Result<()> {
         if self.otel.exporter == "otlp" && self.otel.endpoint.is_empty() {
@@ -419,6 +437,15 @@ impl Config {
             let d = parse_humantime(field, raw)?;
             if d.is_zero() {
                 return Err(anyhow!("{field} must be > 0"));
+            }
+        }
+        // `valkey.ttl` is `omitempty,min=1s` (Go `ValkeyConfig.TTL`, §4): an
+        // empty value is allowed and the accessor falls back to 30s; a present
+        // value must parse to a positive duration.
+        if !self.valkey.ttl.is_empty() {
+            let d = parse_humantime("valkey.ttl", &self.valkey.ttl)?;
+            if d.is_zero() {
+                return Err(anyhow!("valkey.ttl must be > 0"));
             }
         }
         // Per-feature checks run only when the feature is enabled (Go
@@ -574,6 +601,7 @@ fn leaf_bindings() -> Vec<(&'static str, &'static str)> {
         ("valkey.port", "VALKEY_PORT"),
         ("valkey.password", "VALKEY_PASSWORD"),
         ("valkey.db", "VALKEY_DB"),
+        ("valkey.ttl", "VALKEY_TTL"),
         ("valkey.connect_timeout", "VALKEY_CONNECT_TIMEOUT"),
         ("log.level", "LOG_LEVEL"),
         ("log.format", "LOG_FORMAT"),
@@ -758,6 +786,35 @@ log:
         let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
         cfg.validate_cross()
             .expect("disabled feature limits are not checked");
+    }
+
+    #[test]
+    fn valkey_ttl_defaults_to_30s_when_absent() {
+        let cfg: Config = from_yaml_str(sample_yaml()).try_deserialize().unwrap();
+        assert_eq!(cfg.valkey.ttl, "30s");
+        assert_eq!(cfg.valkey_ttl(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn valkey_ttl_parses_an_override_and_rejects_zero() {
+        let yaml = sample_yaml().replace("  db: 0\n", "  db: 0\n  ttl: 45s\n");
+        let cfg: Config = from_yaml_str(&yaml).try_deserialize().unwrap();
+        cfg.validate_cross().expect("45s is valid");
+        assert_eq!(cfg.valkey_ttl(), Duration::from_secs(45));
+
+        let bad = sample_yaml().replace("  db: 0\n", "  db: 0\n  ttl: 0s\n");
+        let cfg: Config = from_yaml_str(&bad).try_deserialize().unwrap();
+        assert!(cfg.validate_cross().is_err(), "a 0s TTL is rejected");
+    }
+
+    #[test]
+    fn leaf_bindings_cover_valkey_ttl() {
+        let b = leaf_bindings();
+        assert!(
+            b.iter()
+                .any(|(k, e)| *k == "valkey.ttl" && *e == "VALKEY_TTL"),
+            "missing leaf binding valkey.ttl -> VALKEY_TTL"
+        );
     }
 
     #[test]

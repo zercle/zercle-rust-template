@@ -4,7 +4,7 @@
 //! `tracing::info!` per request with `request_id`, `method`, `path`, `status`, `latency_us`.
 //!
 //! The request id is read from the request extensions (populated by the upstream
-//! [`crate::middleware::request_id`] middleware).
+//! [`crate::platform::middleware::request_id`] middleware).
 
 use std::time::Instant;
 

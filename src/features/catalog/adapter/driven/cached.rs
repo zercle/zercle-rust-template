@@ -30,10 +30,12 @@ use crate::features::catalog::port::Repository;
 /// Cache key prefix (Go `productCachePrefix`, verbatim, §5.1j).
 const PRODUCT_CACHE_PREFIX: &str = "catalog:product:";
 
-/// Fallback product-cache TTL. Port-spec §5.1j sets the TTL to `cfg.Valkey.TTL`
-/// (Go default `30s`); this crate's [`ValkeyConfig`](crate::platform::config::ValkeyConfig)
-/// has no `ttl` field yet, so the composition edge passes this constant (the
-/// spec's default) until the platform exposes the setting.
+/// Fallback product-cache TTL: the port-spec §5.1j / Go `setDefaults` default
+/// of `30s`. Production TTL is
+/// [`Config::valkey_ttl`](crate::platform::config::Config::valkey_ttl)
+/// (`valkey.ttl`, env `VALKEY_TTL`), wired at the composition edge in
+/// `catalog::di`; this constant is retained as the documented default for the
+/// cache-TTL assertion.
 pub const DEFAULT_PRODUCT_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// JSON wire shape of a cached product (Go `cachedProduct`, verbatim §5.1j).

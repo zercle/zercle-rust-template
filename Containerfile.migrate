@@ -49,7 +49,6 @@ ENV CC_${MUSL_TARGET_UNDERSCORE}=${MUSL_GCC} \
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
 COPY proto ./proto
-COPY migrations ./migrations
 
 RUN cargo build --release \
     --target ${MUSL_TARGET} \

@@ -9,7 +9,7 @@
 //!    adding a feature means adding one entry to the registry, never touching
 //!    this file.
 //!
-//! [`run`](app::run) then delegates to [`platform::server::run`] which starts
+//! [`run`] then delegates to [`crate::platform::server::run`] which starts
 //! axum + tonic and orchestrates the ordered graceful shutdown.
 
 use std::sync::Arc;
@@ -27,7 +27,7 @@ use crate::platform::{
 };
 
 /// Build metadata, populated at compile time via `option_env!` (see
-/// `src/main.rs`). Re-exported here so [`build`](app::build) can log them
+/// `src/main.rs`). Re-exported here so [`build`] can log them
 /// without depending on the binary.
 pub const VERSION: &str = match option_env!("VERSION") {
     Some(v) => v,
@@ -49,7 +49,7 @@ pub struct Built {
     pub telemetry: Telemetry,
     /// Raw feature HTTP router(s), pre-nested under their versioned prefixes.
     /// The server shell wraps them with shared routes + middleware exactly
-    /// once, inside [`platform::server::run`].
+    /// once, inside [`crate::platform::server::run`].
     pub api: Router,
     /// tonic router with every feature's gRPC services.
     pub grpc: GrpcRouter,

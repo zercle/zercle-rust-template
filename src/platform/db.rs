@@ -4,7 +4,7 @@
 //!
 //! * [`new_pool`] builds a tuned [`sqlx::PgPool`] from [`Config`], pings the database, and
 //!   returns the live pool. On ping failure the pool is closed before returning the error.
-//! * [`PgChecker`] implements [`shared::health::Checker`] and pings the pool for readiness.
+//! * [`PgChecker`] implements [`crate::platform::health::Checker`] and pings the pool for readiness.
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;

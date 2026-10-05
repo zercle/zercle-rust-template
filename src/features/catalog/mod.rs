@@ -1,16 +1,17 @@
-//! STUB FEATURE (IO edge) — catalog: distributed-vending-machines demo.
+//! catalog — distributed-vending-machines demo feature (Go
+//! `internal/features/catalog` parity, port-spec §5.1).
 //!
-//! Go `internal/features/catalog` parity (port-spec §5.1). The pure-logic
-//! layers are fully implemented and unit-tested; `adapter/` holds empty module
-//! skeletons and `di.rs` is a warn-only stub until the next wave wires
-//! postgres and axum/tonic.
+//! Full clean-architecture slice: pure `domain` rules, a `contract` wire
+//! surface, an outbound `port`, an `application` use case, and both adapter
+//! rings (axum HTTP + tonic gRPC driving; postgres + Valkey cache-aside
+//! driven) wired by `di`.
 //!
 //! ```text
 //! contract/    canonical inbound wire types (leaf; published via crate::api::v1)
 //! domain/      Product entity + domain errors (innermost)
 //! port/        outbound (driven) Repository port
 //! application/ inbound Service port + Usecase implementation
-//! adapter/     driving (http, grpc) + driven (postgres) skeletons — next wave
+//! adapter/     driving (http, grpc) + driven (postgres, cache-aside)
 //! di.rs        composition: sentinel → boundary error mapping + registry entry
 //! ```
 //!

@@ -64,7 +64,6 @@ ENV CC_${MUSL_TARGET_UNDERSCORE}=${MUSL_GCC} \
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
 COPY proto ./proto
-COPY migrations ./migrations
 COPY config.yaml ./config.yaml
 
 # Build metadata injected at compile time so `option_env!("VERSION")` etc.

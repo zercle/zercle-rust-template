@@ -1,16 +1,17 @@
-//! STUB FEATURE (IO edge) — machines: distributed-vending-machines demo.
+//! machines — distributed-vending-machines demo feature (Go
+//! `internal/features/machines` parity, port-spec §5.2).
 //!
-//! Go `internal/features/machines` parity (port-spec §5.2). The pure-logic
-//! layers are fully implemented and unit-tested; `adapter/` holds empty module
-//! skeletons and `di.rs` is a warn-only stub until the next wave wires
-//! postgres and axum/tonic.
+//! Full clean-architecture slice: pure `domain` rules (coin denominations +
+//! bank arithmetic), a `contract` wire surface, an outbound `port`, an
+//! `application` use case, and both adapter rings (axum HTTP + tonic gRPC
+//! driving; postgres driven) wired by `di`.
 //!
 //! ```text
 //! contract/    canonical inbound wire types (leaf; published via crate::api::v1)
 //! domain/      Machine entity + coin rules + domain errors (innermost)
 //! port/        outbound (driven) Repository port
 //! application/ inbound Service port + Usecase implementation
-//! adapter/     driving (http, grpc) + driven (postgres) skeletons — next wave
+//! adapter/     driving (http, grpc) + driven (postgres)
 //! di.rs        composition: sentinel → boundary error mapping + registry entry
 //! ```
 //!

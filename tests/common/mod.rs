@@ -11,6 +11,16 @@ use std::time::Duration;
 
 use zercle_rust_template::Config;
 
+/// Enable all four demo features on a test config. `config.yaml` already sets
+/// them, but forcing the flags here keeps the e2e independent of the
+/// checkout's yaml and of any `*_ENABLED` env overrides.
+pub fn enable_all_features(cfg: &mut Config) {
+    cfg.catalog.enabled = true;
+    cfg.machines.enabled = true;
+    cfg.sales.enabled = true;
+    cfg.reporting.enabled = true;
+}
+
 /// True iff both `cfg.db.host:port` and `cfg.valkey.host:port` accept a TCP
 /// connection within the per-probe timeout.
 pub fn infra_reachable(cfg: &Config) -> bool {

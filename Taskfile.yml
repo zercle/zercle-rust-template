@@ -43,7 +43,13 @@ tasks:
       - cargo test --all-targets
 
   test-integration:
-    desc: Run the full suite against live postgres + valkey. Bring infra up first with `docker compose up -d postgres valkey`, then run. Includes the #[ignore]-gated live-infra tests.
+    desc: >-
+      Run the full live-infra suite (all #[ignore]-gated tests + the e2e server test).
+      The Rust integration suites read DATABASE_URL directly, e.g.
+      DATABASE_URL=postgres://postgres:postgres@localhost:5432/it_merged task test-integration;
+      the server/migrate binaries and the e2e test instead build their DSN from the DB_* config
+      leaves, so also export DB_NAME (and friends) when running the e2e. Bring infra up first
+      with `docker compose up -d postgres valkey` and apply migrations (`task migrate-up`).
     cmds:
       - cargo test --all-targets -- --include-ignored --test-threads=1
 
@@ -53,9 +59,13 @@ tasks:
       - cargo test --test architecture
 
   test-e2e:
-    desc: Run the e2e test that boots the full app. Requires `docker compose up -d postgres valkey` and migrations applied first (`task migrate-up`). Skips cleanly when infra is unreachable.
+    desc: >-
+      Run the e2e test that boots the full app and drives one HTTP flow per feature.
+      It reads the DB_* config leaves (not DATABASE_URL), so point it at a migrated database,
+      e.g. DB_NAME=it_merged task test-e2e. Requires `docker compose up -d postgres valkey`
+      and migrations applied first (`task migrate-up`). Self-skips when infra is unreachable.
     cmds:
-      - cargo test --test e2e
+      - cargo test --test e2e -- --include-ignored
 
   lint:
     desc: Run clippy with warnings denied (matches CI).
@@ -85,7 +95,7 @@ tasks:
       - git diff --exit-code Cargo.lock Cargo.toml
 
   migrate-up:
-    desc: Run database migrations (sqlx::migrate!; reads DATABASE_URL or DB_* env vars).
+    desc: Run database migrations via the registry-based `migrate` binary (sqlx::migrate!; builds its DSN from the DB_* config leaves).
     cmds:
       - cargo run --bin migrate -- up
 
@@ -95,12 +105,39 @@ tasks:
       - cargo run --bin migrate -- down {{.N | default "1"}}
 
   migrate-create:
-    desc: "Create a new migration pair (NNNNNN_name.up.sql + .down.sql). Usage: `task migrate-create NAME=add_users`. Requires sqlx-cli: `cargo install sqlx-cli --features postgres`."
+    desc: >-
+      Create a reversible migration pair under
+      src/features/<FEATURE>/adapter/driven/postgres/migrations/ using the next free GLOBAL
+      version number across all features (versions are one namespace, port-spec §1).
+      Usage: `task migrate-create FEATURE=catalog NAME=add_discount`.
     cmds:
-      - cmd: sqlx migrate add -r {{.NAME}}
-        ignore_error: true
-      - cmd: echo "If sqlx-cli is not installed, create migrations/<NNNNNN>_<NAME>.{up,down}.sql by hand and bump the sequence number."
-        silent: true
+      - silent: true
+        cmd: |
+          set -e
+          if [ -z "{{.FEATURE}}" ] || [ -z "{{.NAME}}" ]; then
+            echo "usage: task migrate-create FEATURE=<feature> NAME=<migration_name>" >&2
+            exit 1
+          fi
+          dir="src/features/{{.FEATURE}}/adapter/driven/postgres/migrations"
+          if [ ! -d "$dir" ]; then
+            echo "no migrations directory for feature '{{.FEATURE}}': $dir" >&2
+            exit 1
+          fi
+          last=$(ls src/features/*/adapter/driven/postgres/migrations/*.sql 2>/dev/null \
+            | sed -E 's#.*/##; s/^0*([0-9]+)_.*/\1/' \
+            | sort -n | tail -1)
+          next=$(printf '%06d' "$(( ${last:-0} + 1 ))")
+          up="$dir/${next}_{{.NAME}}.up.sql"
+          down="$dir/${next}_{{.NAME}}.down.sql"
+          if [ -e "$up" ] || [ -e "$down" ]; then
+            echo "migration already exists: $up / $down" >&2
+            exit 1
+          fi
+          : > "$up"
+          : > "$down"
+          echo "created $up"
+          echo "created $down"
+          echo "edit both files by hand; with sqlx-cli installed, \`sqlx migrate add -r --source $dir {{.NAME}}\` is the per-directory alternative (timestamp version)."
 
   proto:
     desc: Regenerate protobuf/gRPC code. Handled automatically by build.rs (tonic-build) on every cargo build; this task is a no-op kept for parity with the Go Taskfile.
