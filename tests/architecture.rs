@@ -1,17 +1,24 @@
 //! Executable dependency gates for the clean-architecture layering.
 //!
-//! Each rule scans the `use crate::…` statements of every source file under
-//! `src/` and fails with the violated rule's rationale. Mirrors the Go
-//! template's `internal/architecture_test.go`: driving adapters depend on the
-//! application port, the use case depends on outbound ports + domain +
-//! contract, adapters satisfy ports structurally, and the published contract
-//! facade `crate::api` is importable only from outside internal code.
+//! Each rule scans the `use crate::…` statements of every non-test source file
+//! under `src/` and fails with the violated rule's rationale. Mirrors the Go
+//! template's `internal/architecture_test.go` and the Bun template's
+//! `src/architecture.test.ts`: the handler depends on the usecase service, the
+//! usecase depends on the outbound repository interface + domain + contract,
+//! the postgres repository satisfies that interface structurally, and the
+//! published contract facade `crate::api` is importable only from outside
+//! internal code.
 //!
 //! Scope note: only `crate::`-rooted imports are checked. Relative imports
 //! (`super::…`, sibling modules) are inherently intra-layer and cannot cross
 //! feature/layer boundaries, so they are out of scope — same spirit as Go's
 //! import-path scan.
+//!
+//! Test code is exempt (the Go scanner skips `_test.go`, the Bun scanner skips
+//! `*.test.ts`): whole-file test modules (`#[cfg(test)] mod name;`) wire fakes
+//! across layers by design, so they are not held to the production rules.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -71,63 +78,70 @@ fn rules() -> Vec<Rule> {
             },
         },
         Rule {
-            name: "port-depends-only-on-domain",
-            why: "outbound ports may reference only their own feature's domain",
+            name: "repository-interface-depends-only-on-domain",
+            why: "the outbound repository interface may reference only its own feature's domain",
             denied: |module, import| {
                 let Some(f) = feature_of(module) else {
                     return false;
                 };
-                is_under(module, &format!("features/{f}/port"))
-                    && !is_under(import, &format!("features/{f}/domain"))
+                // The interface package only; `repository/postgres` is the
+                // implementation, governed by the next rule.
+                if !is_under(module, &format!("features/{f}/repository"))
+                    || is_under(module, &format!("features/{f}/repository/postgres"))
+                {
+                    return false;
+                }
+                !is_under(import, &format!("features/{f}/domain"))
             },
         },
         Rule {
-            name: "application-depends-on-domain-port-contract",
-            why: "use cases orchestrate their own feature's domain, ports, and wire contract, nothing else",
+            name: "usecase-depends-on-domain-repository-contract",
+            why: "use cases orchestrate their own feature's domain, repository interface, and wire contract, nothing else",
             denied: |module, import| {
                 let Some(f) = feature_of(module) else {
                     return false;
                 };
-                if !is_under(module, &format!("features/{f}/application")) {
+                if !is_under(module, &format!("features/{f}/usecase")) {
                     return false;
                 }
-                !(is_under(import, &format!("features/{f}/domain"))
-                    || is_under(import, &format!("features/{f}/port"))
-                    || is_under(import, &format!("features/{f}/contract"))
-                    || is_under(import, &format!("features/{f}/application")))
+                let own = |layer: &str| is_under(import, &format!("features/{f}/{layer}"));
+                // The repository *interface* only: importing the concrete
+                // `repository/postgres` implementation is denied.
+                let repository_interface = own("repository")
+                    && !is_under(import, &format!("features/{f}/repository/postgres"));
+                !(own("domain") || repository_interface || own("contract") || own("usecase"))
             },
         },
         Rule {
-            name: "driven-adapters-ignore-application",
-            why: "adapter/driven satisfies ports structurally and must not know about the application layer or driving adapters",
+            name: "repository-impl-ignores-usecase-and-handler",
+            why: "the postgres repository satisfies the repository interface structurally and must not know about the usecase or handler layers",
             denied: |module, import| {
                 let Some(f) = feature_of(module) else {
                     return false;
                 };
-                if !is_under(module, &format!("features/{f}/adapter/driven")) {
+                if !is_under(module, &format!("features/{f}/repository/postgres")) {
                     return false;
                 }
-                is_under(import, &format!("features/{f}/application"))
-                    || import.contains("/adapter/driving")
+                is_under(import, &format!("features/{f}/usecase"))
+                    || is_under(import, &format!("features/{f}/handler"))
             },
         },
         Rule {
-            name: "driving-adapters-ignore-ports-and-driven-adapters",
-            why: "adapter/driving talks to the application port only, never to outbound ports or other adapters",
+            name: "handler-ignores-repository",
+            why: "the handler talks to the usecase service only, never to the repository interface or its postgres implementation",
             denied: |module, import| {
                 let Some(f) = feature_of(module) else {
                     return false;
                 };
-                if !is_under(module, &format!("features/{f}/adapter/driving")) {
+                if !is_under(module, &format!("features/{f}/handler")) {
                     return false;
                 }
-                is_under(import, &format!("features/{f}/port"))
-                    || import.contains("/adapter/driven")
+                is_under(import, &format!("features/{f}/repository"))
             },
         },
         Rule {
             name: "features-registry-imports-only-own-features",
-            why: "the feature registry enumerates features; it may reach only a feature's module root or its `di` composition entry point (plus platform support), never a feature's domain/contract/port/application/adapter internals",
+            why: "the feature registry enumerates features; it may reach only a feature's module root or its `di` composition entry point (plus platform support), never a feature's domain/contract/repository/usecase/handler internals",
             denied: |module, import| {
                 // Applies to `src/features/mod.rs` and `src/features/registry.rs`.
                 if !(module == "features" || module == "features/registry") {
@@ -166,6 +180,54 @@ fn module_path(src_root: &Path, file: &Path) -> String {
     let rel = rel.strip_suffix(".rs").unwrap_or(&rel);
     let rel = rel.strip_suffix("/mod").unwrap_or(rel);
     rel.to_string()
+}
+
+/// Directory holding `file`'s child modules: for `mod.rs` its own directory,
+/// otherwise a sibling directory named after the file stem.
+fn module_dir(file: &Path) -> PathBuf {
+    if file.file_name().is_some_and(|n| n == "mod.rs") {
+        file.parent().expect("mod.rs has a parent").to_path_buf()
+    } else {
+        let stem = file.file_stem().expect("rs file has a stem");
+        file.parent().expect("rs file has a parent").join(stem)
+    }
+}
+
+/// Names of whole-file child modules gated `#[cfg(test)] mod name;` in `text`.
+/// Inline `#[cfg(test)] mod tests { … }` blocks are not returned: they share
+/// their parent file and are scanned with it.
+fn test_gated_child_modules(text: &str) -> Vec<String> {
+    let text = strip_line_comments(text);
+    let needle = "#[cfg(test)]";
+    let mut names = Vec::new();
+    let mut search = 0usize;
+    while let Some(rel) = text[search..].find(needle) {
+        let mut rest = &text[search + rel + needle.len()..];
+        search += rel + needle.len();
+        // Skip whitespace and any further attribute groups before the item.
+        loop {
+            rest = rest.trim_start();
+            match rest.strip_prefix("#[") {
+                Some(stripped) => match stripped.find(']') {
+                    Some(end) => rest = &stripped[end + 1..],
+                    None => break,
+                },
+                None => break,
+            }
+        }
+        let rest = rest.strip_prefix("pub ").unwrap_or(rest);
+        if let Some(after) = rest.strip_prefix("mod ") {
+            let name: String = after
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let tail = after[name.len()..].trim_start();
+            if !name.is_empty() && tail.starts_with(';') {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 /// Remove `//` line comments so commented-out code cannot trip the scanner.
@@ -306,10 +368,31 @@ fn architecture_rules_hold() {
     );
     files.sort();
 
+    // Whole-file test modules are exempt (see the module doc): resolve every
+    // `#[cfg(test)] mod name;` declaration to the file it gates.
+    let mut exempt: HashSet<PathBuf> = HashSet::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("read source");
+        for name in test_gated_child_modules(&text) {
+            let dir = module_dir(file);
+            for candidate in [
+                dir.join(format!("{name}.rs")),
+                dir.join(&name).join("mod.rs"),
+            ] {
+                if candidate.exists() {
+                    exempt.insert(candidate);
+                }
+            }
+        }
+    }
+
     let rule_table = rules();
     let mut violations: Vec<String> = Vec::new();
 
     for file in &files {
+        if exempt.contains(file) {
+            continue;
+        }
         let module = module_path(&src_root, file);
         let text = &fs::read_to_string(file).expect("read source");
         for import in crate_imports(text) {
@@ -374,6 +457,104 @@ mod scanner_tests {
     }
 
     #[test]
+    fn finds_cfg_test_child_modules() {
+        assert_eq!(
+            test_gated_child_modules("#[cfg(test)]\nmod integration;"),
+            vec!["integration".to_string()]
+        );
+        assert_eq!(
+            test_gated_child_modules("#[cfg(test)]\npub mod fixture;"),
+            vec!["fixture".to_string()]
+        );
+        // Inline `mod tests { … }` is not a whole-file module.
+        assert!(test_gated_child_modules("#[cfg(test)]\nmod tests { }").is_empty());
+        // A non-test `mod` is not exempt.
+        assert!(test_gated_child_modules("mod production;").is_empty());
+    }
+
+    #[test]
+    fn repository_interface_rule_excludes_postgres_implementation() {
+        let table = rules();
+        let rule = table
+            .iter()
+            .find(|r| r.name == "repository-interface-depends-only-on-domain")
+            .expect("interface rule present");
+        // Interface package: own domain only.
+        assert!((rule.denied)(
+            "features/catalog/repository/repository",
+            "features/catalog/handler"
+        ));
+        // The postgres implementation is out of this rule's scope.
+        assert!(!(rule.denied)(
+            "features/catalog/repository/postgres",
+            "features/catalog/domain"
+        ));
+        assert!(!(rule.denied)(
+            "features/catalog/repository/postgres/cached",
+            "features/catalog/repository"
+        ));
+    }
+
+    #[test]
+    fn handler_and_impl_rules_enforce_the_new_boundaries() {
+        let table = rules();
+        let handler = table
+            .iter()
+            .find(|r| r.name == "handler-ignores-repository")
+            .expect("handler rule present");
+        assert!((handler.denied)(
+            "features/catalog/handler/http",
+            "features/catalog/repository/Repository"
+        ));
+        assert!((handler.denied)(
+            "features/catalog/handler/grpc",
+            "features/catalog/repository/postgres/PgRepository"
+        ));
+        assert!(!(handler.denied)(
+            "features/catalog/handler/http",
+            "features/catalog/usecase/Service"
+        ));
+
+        let imp = table
+            .iter()
+            .find(|r| r.name == "repository-impl-ignores-usecase-and-handler")
+            .expect("impl rule present");
+        assert!((imp.denied)(
+            "features/catalog/repository/postgres/integration",
+            "features/catalog/usecase/Service"
+        ));
+        assert!((imp.denied)(
+            "features/catalog/repository/postgres",
+            "features/catalog/handler/http"
+        ));
+        assert!(!(imp.denied)(
+            "features/catalog/repository/postgres",
+            "features/catalog/repository/Repository"
+        ));
+    }
+
+    #[test]
+    fn usecase_rule_allows_interface_but_denies_postgres_impl() {
+        let table = rules();
+        let rule = table
+            .iter()
+            .find(|r| r.name == "usecase-depends-on-domain-repository-contract")
+            .expect("usecase rule present");
+        assert!(!(rule.denied)(
+            "features/catalog/usecase/usecase",
+            "features/catalog/repository/Repository"
+        ));
+        assert!((rule.denied)(
+            "features/catalog/usecase/usecase",
+            "features/catalog/repository/postgres/PgRepository"
+        ));
+        assert!((rule.denied)(
+            "features/catalog/usecase/usecase",
+            "features/machines/domain/Machine"
+        ));
+    }
+
+    #[test]
     fn registry_rule_allows_roots_and_di_only() {
         let table = rules();
         let rule = table
@@ -385,13 +566,13 @@ mod scanner_tests {
         assert!(!(rule.denied)("features/registry", "features/sales"));
         assert!(!(rule.denied)("features", "features/catalog"));
         assert!(!(rule.denied)("features", "platform/config"));
-        // Denied: a feature's domain/contract/port/application/adapter internals.
+        // Denied: a feature's domain/contract/repository/usecase/handler internals.
         assert!((rule.denied)("features", "features/catalog/domain"));
         assert!((rule.denied)(
             "features/registry",
-            "features/sales/adapter/driven/postgres"
+            "features/sales/repository/postgres"
         ));
-        assert!((rule.denied)("features", "features/sales/application"));
+        assert!((rule.denied)("features", "features/sales/usecase"));
         // Other modules are out of scope for this rule.
         assert!(!(rule.denied)(
             "features/catalog/di",

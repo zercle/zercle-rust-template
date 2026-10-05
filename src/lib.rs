@@ -1,16 +1,17 @@
 //! zercle-rust-template — opinionated Rust (axum) microservice template.
 //!
 //! Clean architecture (DDD) layout mirroring the Go template
-//! (`internal/features/<name>/{contract,domain,port,application,adapter,di}`):
+//! (`internal/features/<name>/{contract,domain,repository,usecase,handler,di}`):
 //!
 //! * [`platform`] — cross-cutting concerns (config, db, valkey, boundary
 //!   errors, health, telemetry, server shell, middleware). Feature-agnostic by
 //!   rule: platform may never import features.
 //! * [`features`] — per-feature clean-architecture slices:
 //!   `contract` (inbound wire types, leaf) · `domain` (entities + errors,
-//!   innermost) · `port` (outbound ports) · `application` (use cases, speaks
-//!   contract types at the boundary) · `adapter/driving` + `adapter/driven`
-//!   (interface adapters) · `di` (composition).
+//!   innermost) · `repository` (outbound interface) + `repository/postgres`
+//!   (sqlx implementation + cache-aside + migrations) · `usecase` (use cases,
+//!   speak contract types at the boundary) · `handler` (axum HTTP + tonic gRPC
+//!   handlers) · `di` (composition).
 //! * [`api`] — published contract facade for external consumers. Internal code
 //!   must not import it: the dependency is strictly outward-only.
 //! * [`app`] — the composition root.

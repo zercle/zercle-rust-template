@@ -81,12 +81,11 @@ zercle-rust-template/
 │           # catalog, machines, sales, and reporting each repeat the layer layout below:
 │           ├── contract/       # inbound wire types (LEAF; published via crate::api::v1)
 │           ├── domain/         # entities + sentinel errors (innermost)
-│           ├── port/           # outbound ports (Repository trait)
-│           ├── application/    # inbound Service trait + Usecase implementation
-│           ├── adapter/
-│           │   ├── driving/    # axum handlers + tonic service
-│           │   └── driven/     # sqlx repository (catalog adds the cache-aside decorator,
-│           │       └── postgres/migrations/   # feature-owned SQL, one global version namespace
+│           ├── repository/     # outbound repository interface (Repository trait)
+│           │   └── postgres/   # sqlx repository (catalog adds the cache-aside decorator,
+│           │       └── migrations/   # feature-owned SQL, one global version namespace
+│           ├── usecase/        # inbound Service trait + Usecase implementation
+│           ├── handler/        # axum handlers + tonic service
 │           └── di.rs           # wiring + sentinel→AppError mapping
 ├── tests/
 │   ├── common/mod.rs           # shared helpers for integration + e2e tests
@@ -113,7 +112,7 @@ pointing inward:
 
 ```
 consumer services ──> api::v1 ──> features/*/contract    (published contract, outward-only)
-adapter/driving ──> application::Service ──> port::Repository <── adapter/driven/postgres
+handler ──> usecase::Service ──> repository::Repository <── repository/postgres
 all layers ──> domain (entities + sentinel errors)
 platform/* ── cross-cutting, never imports features/**
 ```
@@ -121,16 +120,15 @@ platform/* ── cross-cutting, never imports features/**
 - `domain` holds entities and sentinel errors (innermost; no crate-internal dependencies).
 - `contract` holds the canonical inbound wire types (`serde` + `validator` only) — the single
   source of the API shapes.
-- `port` declares the outbound (driven) `Repository` trait; it references only its own feature's
+- `repository` declares the outbound `Repository` trait; it references only its own feature's
   domain.
-- `application` declares the inbound `Service` trait (speaking contract types) and its `Usecase`
+- `usecase` declares the inbound `Service` trait (speaking contract types) and its `Usecase`
   implementation, which owns the domain ↔ contract mapping and the single validation path
   (e.g. wire-id parsing) shared by HTTP and gRPC.
-- `adapter/driving` (axum handlers, tonic service) translates transport ↔ contract and calls
-  `application::Service`; `adapter/driven/postgres` satisfies `port::Repository` with sqlx and
-  owns the persistence models and SQL migrations. (`in` is a Rust keyword, hence the hexagonal
-  `driving`/`driven` names.)
-- `di` is the composition edge: it wires repository → use case → adapters, nests HTTP routes
+- `handler` (axum handlers, tonic service) translates transport ↔ contract and calls
+  `usecase::Service`; `repository/postgres` satisfies `repository::Repository` with sqlx and
+  owns the persistence models and SQL migrations.
+- `di` is the composition edge: it wires repository → use case → handlers, nests HTTP routes
   under `/api/v1`, registers the feature's gRPC service on the platform's tonic router, and maps
   the domain sentinel errors to the shared `AppError`.
 
@@ -141,8 +139,8 @@ Internal code never imports `crate::api`.
 
 **Executable dependency gates.** `tests/architecture.rs` scans every `crate::`-rooted `use`
 statement across `src/` and fails when a layer reaches sideways or outward: facade imports,
-domain/contract purity, port and application allowlists, adapter separation, registry purity,
-and platform's feature-agnosticism. It runs as its own CI job and in `task test-architecture`.
+domain/contract purity, repository and usecase allowlists, handler/repository separation, registry
+purity, and platform's feature-agnosticism. It runs as its own CI job and in `task test-architecture`.
 
 **Feature registry.** `src/features/registry.rs` is the **single enumeration point**: `list()`
 holds one `Feature` — `name`, `register`, `migrations` — per feature, `register_all` folds every
@@ -153,7 +151,7 @@ feature's own directory. That order is also the migration order: `catalog` owns 
 no schema of its own.
 
 **Migrations are feature-owned.** Each feature's SQL lives in its
-`adapter/driven/postgres/migrations/` and is embedded per feature; the `migrate` binary builds one
+`repository/postgres/migrations/` and is embedded per feature; the `migrate` binary builds one
 merged, version-sorted `sqlx::Migrator` from every registered feature's migrations via
 `registry::migrator()` (Go `MigrationSources` + `fsmerge` parity), so deleting a feature deletes
 its schema with it. Migration versions are a **single namespace across all features**, not per
@@ -204,15 +202,15 @@ Every HTTP failure — handler errors and framework errors alike — is served i
 causes from the wire message.
 
 **Cross-feature boundaries.** Features never import each other; each owns its domain, contract,
-and repository port. `sales` consumes catalog and machines data only through its own
-`port::Repository`, whose postgres implementation reads the `catalog_products` and `machines`
+and repository interface. `sales` consumes catalog and machines data only through its own
+`repository::Repository`, whose postgres implementation reads the `catalog_products` and `machines`
 tables directly and commits the sale in one transaction. This is a deliberate single-database
-compromise — the tables are shared, but the port is the seam: a future service split replaces
-that one implementation without touching the sales domain or application layer. Stock is a
+compromise — the tables are shared, but the interface is the seam: a future service split replaces
+that one implementation without touching the sales domain or usecase layer. Stock is a
 **global pool** (decrementing a product affects every machine), while per-machine product slots
 are the documented extension if the demo grows. `reporting` demonstrates the read-only side of
-the same seam: it aggregates totals across all three features' tables through its own port and
-owns no schema of its own.
+the same seam: it aggregates totals across all three features' tables through its own repository
+interface and owns no schema of its own.
 
 ## Caching (Valkey cache-aside)
 
@@ -226,7 +224,7 @@ repository and writes are best-effort — a cache fault never fails a request.
 
 Rust divergence from Go: the Go template composes a `valkeyaside` **client-side-caching** client
 (`aside.Get(ctx, ttl, key, loader)`), whose invalidation is driven by Valkey's tracking protocol.
-This port uses plain cache-aside `GET` / `SETEX` over the shared `ConnectionManager` — no
+This cache-aside decorator uses plain cache-aside `GET` / `SETEX` over the shared `ConnectionManager` — no
 client-side tracking — so entries expire by TTL and are not server-invalidated. The cached wire
 shape mirrors Go's `cachedProduct`.
 
@@ -260,7 +258,7 @@ task test              # or: cargo test --all-targets
 # Clean-architecture dependency gates (layering rules; no infra needed)
 task test-architecture # or: cargo test --test architecture
 
-# Integration tests: the #[ignore]-gated live-infra suites (db, valkey, adapter roundtrip)
+# Integration tests: the #[ignore]-gated live-infra suites (db, valkey, repository roundtrip)
 docker compose up -d postgres valkey
 task test-integration  # or: cargo test --all-targets -- --include-ignored --test-threads=1
 

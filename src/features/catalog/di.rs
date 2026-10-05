@@ -1,6 +1,6 @@
 //! Composition point for the catalog feature (Go `catalog/di/di.go` parity).
 //! Honors the `catalog.enabled` gate (a disabled feature registers nothing),
-//! builds the driven adapter (`PgRepository`, wrapped in the cache-aside
+//! builds the postgres repository (`PgRepository`, wrapped in the cache-aside
 //! `CachedRepository` when the registry passes the Valkey connection), the
 //! use case with the configured limits, and mounts the axum + tonic driving
 //! adapters under `/api/v1`.
@@ -15,12 +15,12 @@ use axum::Router;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
-use crate::features::catalog::adapter::driven::cached::CachedRepository;
-use crate::features::catalog::adapter::driven::postgres::PgRepository;
-use crate::features::catalog::adapter::driving::{grpc, http};
-use crate::features::catalog::application::{Service, Usecase};
 use crate::features::catalog::domain::Error;
-use crate::features::catalog::port::Repository;
+use crate::features::catalog::handler::{grpc, http};
+use crate::features::catalog::repository::Repository;
+use crate::features::catalog::repository::postgres::PgRepository;
+use crate::features::catalog::repository::postgres::cached::CachedRepository;
+use crate::features::catalog::usecase::{Service, Usecase};
 use crate::platform::config::Config;
 use crate::platform::errors::AppError;
 use crate::platform::server::GrpcRouter;
@@ -82,7 +82,7 @@ fn empty_wired(grpc: GrpcRouter) -> Wired {
     }
 }
 
-/// Build the use case + driving adapters for an already-chosen repository.
+/// Build the use case + handlers for an already-chosen repository.
 fn build(cfg: &Config, repo: Arc<dyn Repository>, grpc: GrpcRouter) -> Wired {
     let service: Arc<dyn Service> = Arc::new(Usecase::new(
         repo,
@@ -107,7 +107,7 @@ fn clamp_i32(value: u32) -> i32 {
 /// namespace (Go `Migrations fs.FS` parity, port-spec §1): catalog owns
 /// version 1. `sqlx::migrate!` yields one entry per `.sql` file (up + down).
 pub fn migrations() -> Vec<sqlx::migrate::Migration> {
-    sqlx::migrate!("./src/features/catalog/adapter/driven/postgres/migrations")
+    sqlx::migrate!("./src/features/catalog/repository/postgres/migrations")
         .iter()
         .cloned()
         .collect()
