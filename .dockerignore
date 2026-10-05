@@ -1,0 +1,25 @@
+# Build artifacts ( Cargo target dir can be GBs )
+target/
+
+# Repo tooling state
+.git/
+.gitattributes
+.github/
+.agents/
+.kilo/
+.worktrees/
+
+# Local env / docs not needed in image build context
+.env
+.env.*
+!.env.example
+coverage.*
+*.lcov
+*.out
+deployments/
+tests/
+LICENSE
+README.md
+AGENTS.md
+Taskfile.yml
+.DS_Store

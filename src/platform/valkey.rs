@@ -5,7 +5,7 @@
 //! * [`new_client`] builds a [`redis::aio::ConnectionManager`] (clone-cheap, `Send + Sync`)
 //!   from [`Config`], pings the server, and returns the manager. On ping failure the manager is
 //!   closed before returning the error.
-//! * [`ValkeyChecker`] implements [`shared::health::Checker`] and PINGs the server for readiness.
+//! * [`ValkeyChecker`] implements [`crate::platform::health::Checker`] and PINGs the server for readiness.
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;

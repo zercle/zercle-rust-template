@@ -4,7 +4,7 @@
 //! Go template (which also installs an OTel `StatsHandler` and a
 //! `MaxRecvMsgSize` / `MaxSendMsgSize` limit; the message-size limits are
 //! applied at the per-service builder in
-//! [`crate::shared::server::run`], and OTel tracing is achieved via
+//! [`crate::platform::server::run`], and OTel tracing is achieved via
 //! `Server::trace_fn` which the existing `tracing-opentelemetry` layer picks
 //! up — together matching Go's behavior without pulling a new crate).
 //!

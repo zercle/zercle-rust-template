@@ -36,12 +36,13 @@ impl RequestId {
 
 /// Resolve the request id for an inbound request, honoring the Go parity rules.
 fn resolve_request_id(req: &Request) -> String {
-    if let Some(value) = req.headers().get(&REQUEST_ID_HEADER) {
-        if let Ok(s) = value.to_str() {
-            if is_valid_request_id(s) {
-                return s.to_owned();
-            }
-        }
+    if let Some(value) = req
+        .headers()
+        .get(&REQUEST_ID_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| is_valid_request_id(s))
+    {
+        return value.to_owned();
     }
     uuid::Uuid::now_v7().to_string()
 }

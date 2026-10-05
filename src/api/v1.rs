@@ -1,14 +1,23 @@
 //! Published inbound contract of the `/api/v1` endpoints (Go `pkg/api/v1`
-//! parity): the request/response wire types plus the error codes that other
-//! services may import.
+//! parity): the request/response wire types of the four demo features plus the
+//! error codes other services may import.
 //!
-//! Facade of the canonical types in the owning feature's `contract` module —
-//! internal code must not import this module. A future v2 contract is a new
-//! facade module (`api::v2`), not a change here.
+//! Facade of the canonical types in each owning feature's `contract` module —
+//! internal code must not import this module
+//! (`tests/architecture.rs`: published-contract-is-outward-only). A future v2
+//! contract is a new facade module (`api::v2`), not a change here.
 
-pub use crate::features::example::contract::{
-    CreateItemRequest, ItemResponse, ListItemsRequest, ListItemsResponse,
+pub use crate::features::catalog::contract::{
+    CreateProductRequest, ListProductsRequest, ListProductsResponse, ProductResponse,
 };
+pub use crate::features::machines::contract::{
+    CreateMachineRequest, ListMachinesRequest, ListMachinesResponse, MachineResponse,
+    RestockBankRequest,
+};
+pub use crate::features::reporting::contract::{
+    CatalogStats, MachineSales, MachineStats, SalesStats, SummaryRequest, SummaryResponse,
+};
+pub use crate::features::sales::contract::{PurchaseRequest, PurchaseResponse};
 
 /// Error codes carried in the JSON error envelope (`{"error": CODE, ...}`).
 pub use crate::platform::errors::errcodes;
@@ -19,23 +28,29 @@ mod tests {
 
     #[test]
     fn contract_aliases_round_trip_json() {
-        let req = CreateItemRequest {
+        let req = CreateProductRequest {
             name: "from-a-consumer".to_string(),
+            price_cents: 150,
+            stock: 2,
         };
         let data = serde_json::to_string(&req).unwrap();
-        assert_eq!(data, r#"{"name":"from-a-consumer"}"#);
-
-        let resp = ItemResponse {
-            id: "id".to_string(),
-            name: "n".to_string(),
-            created_at: "t1".to_string(),
-            updated_at: "t2".to_string(),
-        };
-        let data = serde_json::to_string(&ListItemsResponse { items: vec![resp] }).unwrap();
         assert_eq!(
             data,
-            r#"{"items":[{"id":"id","name":"n","created_at":"t1","updated_at":"t2"}]}"#
+            r#"{"name":"from-a-consumer","price_cents":150,"stock":2}"#
         );
+
+        let resp = PurchaseResponse {
+            id: "id".to_string(),
+            machine_id: "m".to_string(),
+            product_id: "p".to_string(),
+            price_cents: 150,
+            total_inserted_cents: 175,
+            change_cents: 25,
+            change_coins: vec![25],
+            purchased_at: "t".to_string(),
+        };
+        let data = serde_json::to_string(&resp).unwrap();
+        assert!(data.contains(r#""change_coins":[25]"#), "got {data}");
     }
 
     #[test]

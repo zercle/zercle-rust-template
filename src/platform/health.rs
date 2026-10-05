@@ -6,6 +6,12 @@ use anyhow::{Result, anyhow, bail};
 use futures::future::join_all;
 
 /// A health probe for a single dependency.
+///
+/// `#[allow(clippy::double_must_use)]`: `async-trait` 0.1.89 expands each
+/// `async fn` into a `#[must_use]` method returning a boxed `Future` (already
+/// `#[must_use]`), which trips clippy's `double_must_use` on the macro span.
+/// The attribute is a false positive here; the trait signature is correct.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait Checker: Send + Sync {
     fn name(&self) -> &'static str;

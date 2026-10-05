@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package machines.v1;
+
+// machines feature RPC surface (Go handler parity, port-spec §5.2a). HTTP
+// routes are POST /machines, GET /machines, GET /machines/{id},
+// POST /machines/{id}/bank.
+service MachinesService {
+  rpc CreateMachine(CreateMachineRequest) returns (Machine);
+  rpc GetMachine(GetMachineRequest) returns (Machine);
+  rpc ListMachines(ListMachinesRequest) returns (ListMachinesResponse);
+  rpc RestockBank(RestockBankRequest) returns (Machine);
+}
+
+message Machine {
+  string id = 1;
+  string label = 2;
+  // Denomination in cents -> count, JSON-object semantics.
+  map<int32, int32> coin_bank = 3;
+  string created_at = 4;
+  string updated_at = 5;
+}
+
+message CreateMachineRequest {
+  string label = 1;
+  repeated int32 initial_coins = 2;
+}
+
+message GetMachineRequest {
+  string id = 1;
+}
+
+message ListMachinesRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListMachinesResponse {
+  repeated Machine machines = 1;
+}
+
+message RestockBankRequest {
+  // Path id carried in the message for the RPC form.
+  string id = 1;
+  repeated int32 coins = 2;
+}

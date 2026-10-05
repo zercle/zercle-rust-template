@@ -1,0 +1,203 @@
+# =============================================================================
+# GitHub Actions CD Workflow
+# =============================================================================
+# This workflow handles continuous deployment of container images.
+#
+# Triggers:
+#   - Push of a version tag (v*)
+#
+# Jobs:
+#   - build: server + migrate images to ghcr.io, one job per platform,
+#     pushed by digest
+#   - merge: assembles the per-platform digests into multi-arch
+#     (amd64/arm64) manifest lists
+#
+# Notes (why this differs from the Go template's CD):
+#   - The Go Containerfile cross-compiles trivially (CGO_ENABLED=0) in a
+#     single buildx call over both platforms. Here the Rust musl
+#     cross-compiler setup (base image, target triple, linker name) is
+#     arch-specific, and build-push-action cannot vary build-args per
+#     platform in one invocation. So each platform is built natively (the
+#     arm64 leg runs on a native arm64 runner — QEMU emulation is
+#     prohibitively slow for Rust release builds), pushed by digest, and
+#     the manifest list is assembled afterwards.
+#   - Compilation happens inside the Containerfile, so no Rust toolchain
+#     is installed on the runner.
+# =============================================================================
+
+name: CD
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ==========================================================================
+  # Job: Build Container Images (per platform, by digest)
+  # ==========================================================================
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform_id: linux-amd64
+            runner: ubuntu-latest
+            rust_musl_tag: x86_64-musl
+            musl_target: x86_64-unknown-linux-musl
+            musl_gcc: x86_64-unknown-linux-musl-gcc
+            musl_target_underscore: x86_64_unknown_linux_musl
+            musl_target_upper: X86_64_UNKNOWN_LINUX_MUSL
+          - platform: linux/arm64
+            platform_id: linux-arm64
+            runner: ubuntu-24.04-arm
+            rust_musl_tag: aarch64-musl
+            musl_target: aarch64-unknown-linux-musl
+            musl_gcc: aarch64-unknown-linux-musl-gcc
+            musl_target_underscore: aarch64_unknown_linux_musl
+            musl_target_upper: AARCH64_UNKNOWN_LINUX_MUSL
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          {
+            echo "version=${VERSION}"
+            echo "commit_sha=${COMMIT_SHA}"
+            echo "build_time=${BUILD_TIME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push server image by digest
+        id: build-server
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }},push-by-digest=true,name-canonical=true
+          build-args: |
+            RUST_MUSL_TAG=${{ matrix.rust_musl_tag }}
+            MUSL_TARGET=${{ matrix.musl_target }}
+            MUSL_GCC=${{ matrix.musl_gcc }}
+            MUSL_TARGET_UNDERSCORE=${{ matrix.musl_target_underscore }}
+            MUSL_TARGET_UPPER=${{ matrix.musl_target_upper }}
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT_SHA=${{ steps.meta.outputs.commit_sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+          cache-from: type=gha,scope=${{ matrix.platform }}-server
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}-server
+
+      - name: Build and push migrate image by digest
+        id: build-migrate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Containerfile.migrate
+          platforms: ${{ matrix.platform }}
+          push: true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }}-migrate,push-by-digest=true,name-canonical=true
+          build-args: |
+            RUST_MUSL_TAG=${{ matrix.rust_musl_tag }}
+            MUSL_TARGET=${{ matrix.musl_target }}
+            MUSL_GCC=${{ matrix.musl_gcc }}
+            MUSL_TARGET_UNDERSCORE=${{ matrix.musl_target_underscore }}
+            MUSL_TARGET_UPPER=${{ matrix.musl_target_upper }}
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT_SHA=${{ steps.meta.outputs.commit_sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+          cache-from: type=gha,scope=${{ matrix.platform }}-migrate
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}-migrate
+
+      - name: Export digests
+        run: |
+          mkdir -p /tmp/digests/${{ matrix.platform_id }}
+          echo "${{ steps.build-server.outputs.digest }}" | sed 's/^sha256://' > "/tmp/digests/${{ matrix.platform_id }}/server"
+          echo "${{ steps.build-migrate.outputs.digest }}" | sed 's/^sha256://' > "/tmp/digests/${{ matrix.platform_id }}/migrate"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: digests-${{ matrix.platform_id }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # ==========================================================================
+  # Job: Merge Manifest Lists
+  # ==========================================================================
+  merge:
+    name: Merge Manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifest lists
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          cd /tmp/digests
+          for component in server migrate; do
+            image="${{ env.REGISTRY }}/${{ github.repository }}"
+            if [ "$component" = migrate ]; then image="${image}-migrate"; fi
+            refs=()
+            while IFS= read -r digest; do
+              refs+=("$image@sha256:$digest")
+            done < <(cat "linux-amd64/$component" "linux-arm64/$component")
+            docker buildx imagetools create \
+              -t "$image:$VERSION" \
+              -t "$image:latest" \
+              -t "$image:${{ github.ref_name }}" \
+              "${refs[@]}"
+          done
+
+      - name: Inspect resulting manifests
+        run: |
+          docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository }}:latest"
+          docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository }}-migrate:latest"

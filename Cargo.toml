@@ -2,7 +2,7 @@
 name = "zercle_rust_template"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Opinionated Rust (axum) microservice template"
 license = "MIT"
 repository = "https://github.com/zercle/zercle-rust-template"

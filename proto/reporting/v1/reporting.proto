@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package reporting.v1;
+
+// reporting feature RPC surface (Go handler parity, port-spec §5.4a). HTTP
+// route is GET /reports/summary.
+service ReportingService {
+  rpc Summary(SummaryRequest) returns (SummaryResponse);
+}
+
+message SummaryRequest {
+  int32 top = 1;
+}
+
+message CatalogStats {
+  int64 product_count = 1;
+  int64 total_stock = 2;
+}
+
+message MachineStats {
+  int64 machine_count = 1;
+  int64 total_coin_bank_cents = 2;
+}
+
+message SalesStats {
+  int64 purchase_count = 1;
+  int64 revenue_cents = 2;
+}
+
+message MachineSales {
+  string machine_id = 1;
+  string label = 2;
+  int64 purchase_count = 3;
+  int64 revenue_cents = 4;
+}
+
+message SummaryResponse {
+  CatalogStats catalog = 1;
+  MachineStats machines = 2;
+  SalesStats sales = 3;
+  repeated MachineSales top_machines = 4;
+}
