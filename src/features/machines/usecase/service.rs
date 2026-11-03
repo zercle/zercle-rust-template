@@ -2,8 +2,6 @@
 //! §5.2d). Allowed dependencies (`tests/architecture.rs`):
 //! usecase-depends-on-domain-repository-contract.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 
 use crate::features::machines::contract::{
@@ -26,6 +24,3 @@ pub trait Service: Send + Sync {
         req: RestockBankRequest,
     ) -> Result<MachineResponse, Error>;
 }
-
-/// `Arc`-shared service handle used by handlers and `di`.
-pub type SharedService = Arc<dyn Service>;
