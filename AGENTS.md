@@ -239,6 +239,7 @@ Testing & QA).
   and `di/tests.rs`. The e2e test is `tests/e2e.rs`.
 - **Ignore-gating = Go build tags.** Every live-infra test is `#[ignore]`; plain `cargo test`
   compiles but does not run it. `--include-ignored` runs the full live suite (CI integration job).
+  One catalog case is not live-infra and stays ungated: `default_cache_ttl_matches_spec_default`.
 - **Integration setup.** No testcontainers: the suites read `DATABASE_URL` (a local throwaway
   database), apply the registry's merged migrations in-suite, and `TRUNCATE` between cases. They
   **hard-fail** (never skip) when infra is missing, and a **production guard** panics on
