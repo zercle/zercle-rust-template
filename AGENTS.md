@@ -229,11 +229,12 @@ Testing & QA).
 
 ## Testing & QA
 
-- **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live in-module under
-  `#[cfg(test)]`; they run with `cargo test --all-targets`. Integration tests are live-infra
-  suites inside `#[cfg(test)] mod integration` (catalog's in `repository/postgres/integration.rs`,
-  sales' and reporting's at the `di` composition edge) gated by `#[ignore]`. The e2e test is
-  `tests/e2e.rs`.
+- **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live in whole-file
+  `#[cfg(test)] mod tests;` modules beside the code they cover (`<module>/tests.rs`); they run
+  with `cargo test --all-targets`. Live-infra suites are whole-file modules too, each case gated
+  by `#[ignore]` — `repository/postgres/integration.rs` for catalog and machines,
+  `di/integration.rs` for reporting, and the ignored cases in sales' `repository/postgres/tests.rs`
+  and `di/tests.rs`. The e2e test is `tests/e2e.rs`.
 - **Ignore-gating = Go build tags.** Every live-infra test is `#[ignore]`; plain `cargo test`
   compiles but does not run it. `--include-ignored` runs the full live suite (CI integration job).
 - **Integration setup.** No testcontainers: the suites read `DATABASE_URL` (a local throwaway
