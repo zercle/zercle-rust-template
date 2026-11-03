@@ -20,7 +20,7 @@ use crate::features::machines::domain::Error;
 use crate::features::machines::handler::{grpc, http};
 use crate::features::machines::repository::postgres::PgRepository;
 use crate::features::machines::usecase::{Service, Usecase};
-use crate::platform::config::Config;
+use crate::platform::config::{Config, clamp_i32};
 use crate::platform::errors::AppError;
 use crate::platform::server::GrpcRouter;
 pub use crate::platform::server::Wired;
@@ -44,10 +44,7 @@ impl From<Error> for AppError {
 /// Gated on `machines.enabled` (Go §5.2i): a disabled feature registers nothing.
 pub fn register(cfg: &Config, db: PgPool) -> Wired {
     if !cfg.machines.enabled {
-        return Wired {
-            http: Router::new(),
-            grpc: crate::platform::server::empty_grpc_router(),
-        };
+        return Wired::empty(crate::platform::server::empty_grpc_router());
     }
     build(cfg, db, crate::platform::server::empty_grpc_router())
 }
@@ -66,10 +63,7 @@ pub fn register_with_grpc(
     grpc: GrpcRouter,
 ) -> Wired {
     if !cfg.machines.enabled {
-        return Wired {
-            http: Router::new(),
-            grpc,
-        };
+        return Wired::empty(grpc);
     }
     build(cfg, db, grpc)
 }
@@ -98,72 +92,5 @@ fn build(cfg: &Config, db: PgPool, grpc: GrpcRouter) -> Wired {
     Wired { http, grpc }
 }
 
-/// Config limits are validated `>= 1` u32s; clamp to i32 for the port boundary
-/// (Go carries them as int32).
-fn clamp_i32(v: u32) -> i32 {
-    i32::try_from(v).unwrap_or(i32::MAX)
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::platform::errors::errcodes;
-    use sqlx::postgres::PgPoolOptions;
-
-    fn lazy_pool() -> PgPool {
-        PgPoolOptions::new()
-            .connect_lazy("postgres://localhost/none")
-            .expect("lazy pool")
-    }
-
-    fn cfg_enabled(enabled: bool) -> Config {
-        let yaml = format!(
-            r#"
-app: {{ name: t, environment: dev, host: 0.0.0.0, port: 8080 }}
-http: {{ host: 0.0.0.0, port: 8080, body_limit: "1M" }}
-grpc: {{ host: 0.0.0.0, port: 50051 }}
-db: {{ host: localhost, port: 5432, name: app, user: postgres, password: postgres, ssl_mode: disable, max_conns: 1, min_conns: 0 }}
-valkey: {{ host: localhost, port: 6379, db: 0 }}
-otel: {{ exporter: none, service_name: t, sampling: 1.0 }}
-log: {{ level: info, format: json }}
-machines: {{ enabled: {enabled} }}
-"#
-        );
-        ::config::Config::builder()
-            .add_source(::config::File::from_str(&yaml, ::config::FileFormat::Yaml))
-            .build()
-            .expect("build")
-            .try_deserialize()
-            .expect("deserialize")
-    }
-
-    #[test]
-    fn domain_sentinels_map_to_boundary_codes() {
-        let code = |e: Error| AppError::from(e).code().to_string();
-        assert_eq!(code(Error::MachineNotFound), errcodes::NOT_FOUND);
-        assert_eq!(code(Error::InvalidId), errcodes::INVALID_INPUT);
-        assert_eq!(code(Error::InvalidMachineLabel), errcodes::INVALID_INPUT);
-        assert_eq!(code(Error::UnsupportedCoin), errcodes::INVALID_INPUT);
-    }
-
-    #[test]
-    fn migrations_own_version_two() {
-        let m = migrations();
-        assert!(m.iter().any(|m| m.version == 2), "machines owns version 2");
-    }
-
-    #[tokio::test]
-    async fn disabled_feature_registers_nothing() {
-        let wired = register(&cfg_enabled(false), lazy_pool());
-        assert!(!wired.http.has_routes());
-    }
-
-    #[tokio::test]
-    async fn enabled_feature_registers_routes() {
-        let wired = register(&cfg_enabled(true), lazy_pool());
-        assert!(
-            wired.http.has_routes(),
-            "enabled feature mounts its /api/v1 routes"
-        );
-    }
-}
+mod tests;
