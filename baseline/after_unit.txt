@@ -1,0 +1,282 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.99s
+     Running unittests src/lib.rs (target/debug/deps/zercle_rust_template-c280250b626f8a6d)
+
+running 230 tests
+test api::v1::tests::errcode_re_exports ... ok
+test api::errcodes::tests::go_parity_names_and_wire_values ... ok
+test features::catalog::contract::tests::product_response_round_trips_json ... ok
+test features::catalog::di::tests::domain_sentinels_map_to_boundary_codes ... ok
+test api::v1::tests::contract_aliases_round_trip_json ... ok
+test features::catalog::di::tests::migrations_own_version_one ... ok
+test features::catalog::contract::tests::create_request_requires_name_and_positive_price ... ok
+test features::catalog::contract::tests::list_request_rejects_negative_pagination ... ok
+test features::catalog::handler::grpc::tests::create_product_ok ... ok
+test features::catalog::handler::grpc::tests::get_product_maps_not_found_to_not_found ... ok
+test features::catalog::handler::grpc::tests::list_products_maps_fields ... ok
+test features::catalog::handler::grpc::tests::create_product_maps_invalid_price_to_invalid_argument ... ok
+test features::catalog::repository::postgres::cached::tests::cached_payload_round_trips_through_json ... ok
+test features::catalog::handler::http::tests::post_products_returns_201_on_success ... ok
+test features::catalog::handler::http::tests::get_product_returns_400_on_malformed_id ... ok
+test features::catalog::handler::http::tests::get_product_returns_200_on_hit ... ok
+test features::catalog::handler::http::tests::get_product_returns_404_envelope_on_not_found ... ok
+test features::catalog::handler::http::tests::post_products_returns_400_on_invalid_price ... ok
+test features::catalog::handler::http::tests::get_products_returns_400_on_negative_limit ... ok
+test features::catalog::repository::postgres::cached::tests::corrupt_id_is_rejected_on_decode ... ok
+test features::catalog::repository::postgres::integration::cache_aside_miss_then_hit_and_not_found_is_not_cached ... ignored, requires live Postgres + Valkey (DB_* / DATABASE_URL)
+test features::catalog::handler::http::tests::get_products_returns_200_with_payload ... ok
+test features::catalog::repository::postgres::integration::default_cache_ttl_matches_spec_default ... ok
+test features::catalog::repository::postgres::integration::http_get_unknown_id_returns_not_found_envelope ... ignored, requires live Postgres (DB_* / DATABASE_URL)
+test features::catalog::repository::postgres::integration::postgres_repository_create_get_list_pagination ... ignored, requires live Postgres (DB_* / DATABASE_URL)
+test features::catalog::repository::postgres::tests::infrastructure_errors_become_internal ... ok
+test features::catalog::repository::postgres::tests::row_maps_to_domain_product ... ok
+test features::catalog::usecase::usecase::tests::create_maps_domain_to_wire_timestamps ... ok
+test features::catalog::usecase::usecase::tests::create_accepts_multibyte_name_within_rune_cap ... ok
+test features::catalog::usecase::usecase::tests::create_rejects_empty_name ... ok
+test features::catalog::usecase::usecase::tests::create_rejects_multibyte_name_over_rune_cap ... ok
+test features::catalog::usecase::usecase::tests::create_rejects_overlong_name ... ok
+test features::catalog::usecase::usecase::tests::create_rejects_non_positive_price ... ok
+test features::catalog::usecase::usecase::tests::fallback_defaults_apply_when_config_zero ... ok
+test features::catalog::usecase::usecase::tests::create_trims_and_persists ... ok
+test features::catalog::usecase::usecase::tests::get_passes_through_not_found ... ok
+test features::catalog::usecase::usecase::tests::get_rejects_malformed_id_before_touching_the_port ... ok
+test features::catalog::usecase::usecase::tests::get_returns_wire_response_on_hit ... ok
+test features::catalog::usecase::usecase::tests::list_clamps_limit_above_max ... ok
+test features::catalog::usecase::usecase::tests::list_clamps_negative_offset_to_zero ... ok
+test features::catalog::usecase::usecase::tests::list_uses_default_when_limit_zero_or_missing ... ok
+test features::machines::contract::tests::create_request_requires_label_and_positive_initial_coins ... ok
+test features::machines::contract::tests::machine_response_serializes_coin_bank_as_string_keys ... ok
+test features::machines::contract::tests::restock_requires_non_empty_positive_coins ... ok
+test features::machines::di::tests::domain_sentinels_map_to_boundary_codes ... ok
+test features::machines::di::tests::migrations_own_version_two ... ok
+test features::machines::domain::machine::tests::add_coins_increments_and_never_mutates_input ... ok
+test features::machines::domain::machine::tests::validate_coins_accepts_supported_denominations ... ok
+test features::machines::domain::machine::tests::validate_coins_rejects_unsupported ... ok
+test features::machines::handler::grpc::tests::create_machine_maps_invalid_label_to_invalid_argument ... ok
+test features::machines::handler::grpc::tests::create_machine_ok ... ok
+test features::machines::handler::grpc::tests::get_machine_bad_uuid_maps_to_invalid_argument ... ok
+test features::machines::handler::grpc::tests::get_machine_not_found_maps_to_not_found ... ok
+test features::machines::handler::grpc::tests::list_machines_ok ... ok
+test features::machines::handler::grpc::tests::restock_bank_ok ... ok
+test features::machines::handler::grpc::tests::restock_bank_unsupported_coin_maps_to_invalid_argument ... ok
+test features::machines::handler::http::tests::get_machines_by_id_returns_200_on_hit ... ok
+test features::machines::handler::http::tests::get_machines_by_id_returns_404_on_missing ... ok
+test features::machines::handler::http::tests::get_machines_by_id_returns_400_on_bad_uuid ... ok
+test features::machines::handler::http::tests::get_machines_returns_200_with_payload ... ok
+test features::machines::repository::postgres::integration::machines_postgres_integration ... ignored, requires local compose Postgres; creates/drops the it_machines database
+test features::machines::handler::http::tests::post_machines_bank_returns_400_on_empty_coins ... ok
+test features::machines::handler::http::tests::get_machines_returns_400_on_negative_limit ... ok
+test features::machines::handler::http::tests::post_machines_bank_returns_200_on_success ... ok
+test features::machines::repository::postgres::tests::empty_object_maps_to_empty_bank ... ok
+test features::machines::repository::postgres::tests::jsonb_text_maps_to_domain_bank ... ok
+test features::machines::handler::http::tests::post_machines_returns_400_on_empty_label ... ok
+test features::machines::handler::http::tests::post_machines_returns_201_on_success ... ok
+test features::machines::repository::postgres::tests::malformed_jsonb_is_internal ... ok
+test features::machines::repository::postgres::tests::other_sqlx_errors_become_internal ... ok
+test features::machines::handler::http::tests::post_machines_returns_400_on_non_positive_coin ... ok
+test features::machines::repository::postgres::tests::row_not_found_translates_to_machine_not_found ... ok
+test features::machines::usecase::usecase::tests::create_rejects_empty_label ... ok
+test features::machines::usecase::usecase::tests::create_builds_bank_from_initial_coins ... ok
+test features::machines::usecase::usecase::tests::create_rejects_overlong_label ... ok
+test features::machines::usecase::usecase::tests::create_rejects_unsupported_initial_coin ... ok
+test features::machines::usecase::usecase::tests::fallback_defaults_apply_when_config_zero ... ok
+test features::machines::usecase::usecase::tests::get_maps_empty_bank_to_empty_object ... ok
+test features::machines::usecase::usecase::tests::get_passes_through_not_found ... ok
+test features::machines::usecase::usecase::tests::get_rejects_malformed_id_before_touching_the_port ... ok
+test features::machines::usecase::usecase::tests::list_clamps_limit_above_max ... ok
+test features::machines::usecase::usecase::tests::list_uses_default_and_clamps_negative_offset ... ok
+test features::machines::usecase::usecase::tests::restock_re_reads_the_authoritative_bank ... ok
+test features::machines::usecase::usecase::tests::restock_rejects_malformed_id_before_port ... ok
+test features::registry::tests::list_registers_the_four_features_in_version_order ... ok
+test features::machines::usecase::usecase::tests::restock_rejects_unsupported_coin_before_port ... ok
+test features::registry::tests::migrator_merges_and_keeps_sqlx_defaults ... ok
+test features::reporting::contract::tests::summary_response_uses_go_json_names ... ok
+test features::reporting::di::integration::overview_and_top_are_empty_on_empty_database ... ignored, requires live postgres (DB_* / DATABASE_URL)
+test features::reporting::contract::tests::summary_top_is_optional_but_positive_when_present ... ok
+test features::reporting::di::integration::repository_aggregates_totals_and_excludes_salesless_machines ... ignored, requires live postgres (DB_* / DATABASE_URL)
+test features::reporting::di::integration::top_machines_tie_break_by_machine_id_ascending ... ignored, requires live postgres (DB_* / DATABASE_URL)
+test features::reporting::di::integration::usecase_clamps_default_and_zero_but_rejects_over_max ... ignored, requires live postgres (DB_* / DATABASE_URL)
+test features::reporting::di::tests::domain_internal_maps_to_internal ... ok
+test features::reporting::di::tests::domain_sentinel_maps_to_invalid_input ... ok
+test features::reporting::handler::grpc::tests::summary_maps_invalid_top_to_invalid_argument ... ok
+test features::reporting::handler::grpc::tests::summary_ok_maps_contract_to_proto ... ok
+test features::reporting::repository::postgres::tests::machine_row_maps_to_domain ... ok
+test features::reporting::handler::http::tests::get_summary_forwards_top_query_param ... ok
+test features::reporting::repository::postgres::tests::overview_row_maps_to_domain ... ok
+test features::reporting::handler::http::tests::get_summary_returns_400_on_invalid_top ... ok
+test features::reporting::repository::postgres::tests::sqlx_errors_become_internal ... ok
+test features::reporting::handler::http::tests::get_summary_returns_200_with_payload ... ok
+test features::reporting::usecase::usecase::tests::fallback_defaults_apply_when_config_zero ... ok
+test features::reporting::usecase::usecase::tests::summary_accepts_exactly_max ... ok
+test features::catalog::di::tests::disabled_feature_registers_nothing ... ok
+test features::machines::di::tests::disabled_feature_registers_nothing ... ok
+test features::catalog::di::tests::enabled_feature_registers_http_routes ... ok
+test features::reporting::usecase::usecase::tests::summary_maps_overview_and_top_machines ... ok
+test features::reporting::usecase::usecase::tests::summary_propagates_repository_errors ... ok
+test features::machines::di::tests::enabled_feature_registers_routes ... ok
+test features::reporting::usecase::usecase::tests::summary_rejects_top_above_max_before_any_repository_call ... ok
+test features::reporting::usecase::usecase::tests::summary_uses_default_when_top_absent_or_zero ... ok
+test features::sales::contract::tests::purchase_requires_ids_and_positive_coins ... ok
+test features::sales::contract::tests::purchase_response_round_trips_json ... ok
+test features::reporting::di::tests::disabled_feature_registers_nothing ... ok
+test features::sales::di::tests::domain_sentinels_map_to_boundary_codes ... ok
+test features::sales::di::tests::migrations_own_version_three ... ok
+test features::sales::di::tests::sales_wired_insufficient_stock_maps_to_conflict_envelope ... ignored
+test features::sales::di::tests::sales_wired_purchase_overpay_returns_201_and_commits ... ignored
+test features::sales::di::tests::sales_wired_unsupported_coin_maps_to_invalid_input_envelope ... ignored
+test features::sales::domain::coins::tests::make_change_capped_by_bank ... ok
+test features::reporting::di::tests::enabled_feature_registers_summary_route ... ok
+test features::sales::domain::coins::tests::make_change_greedy_largest_first ... ok
+test features::sales::domain::coins::tests::make_change_leftover_errors ... ok
+test features::sales::domain::coins::tests::make_change_non_positive_amount_is_empty ... ok
+test features::sales::domain::coins::tests::sum_coins_adds ... ok
+test features::sales::domain::coins::tests::validate_coins_rejects_unsupported ... ok
+test features::sales::domain::purchase::tests::purchase_exact_change_required ... ok
+test features::sales::domain::purchase::tests::purchase_exact_payment_returns_empty_change_and_keeps_bank ... ok
+test features::sales::domain::purchase::tests::purchase_overpay_returns_composed_change ... ok
+test features::sales::domain::purchase::tests::purchase_rejects_insufficient_payment ... ok
+test features::sales::domain::purchase::tests::purchase_rejects_out_of_stock_after_payment_check ... ok
+test features::sales::domain::purchase::tests::purchase_rejects_unsupported_coin_even_when_payment_suffices ... ok
+test features::sales::handler::grpc::tests::purchase_maps_domain_errors_to_status_codes ... ok
+test features::sales::handler::grpc::tests::purchase_ok ... ok
+test features::sales::di::tests::disabled_feature_registers_nothing ... ok
+test features::sales::handler::http::tests::post_purchases_maps_unknown_machine_to_404_not_found_envelope ... ok
+test features::sales::di::tests::enabled_feature_registers_the_purchases_route ... ok
+test features::sales::repository::postgres::tests::coin_bank_round_trips_through_json ... ok
+test features::sales::handler::http::tests::post_purchases_maps_out_of_stock_to_409_conflict_envelope ... ok
+test features::sales::handler::http::tests::post_purchases_maps_unsupported_coin_to_400_invalid_input_envelope ... ok
+test features::sales::repository::postgres::tests::empty_coin_bank_parses ... ok
+test features::sales::repository::postgres::tests::product_row_maps_to_sale_product ... ok
+test features::sales::repository::postgres::tests::sales_commit_out_of_stock_affects_zero_rows_and_writes_nothing ... ignored
+test features::sales::handler::http::tests::post_purchases_returns_400_on_empty_coins ... ok
+test features::sales::repository::postgres::tests::sales_commit_unknown_machine_rolls_back_stock_decrement ... ignored
+test features::sales::handler::http::tests::post_purchases_returns_201_on_success ... ok
+test features::sales::repository::postgres::tests::sales_purchase_decrements_stock_replaces_bank_and_inserts_row ... ignored
+test features::sales::repository::postgres::tests::sales_reads_project_cross_feature_tables_and_surface_not_found ... ignored
+test features::sales::usecase::usecase::tests::purchase_exact_payment_commits_empty_change ... ok
+test features::sales::usecase::usecase::tests::purchase_propagates_commit_out_of_stock_race ... ok
+test features::sales::usecase::usecase::tests::purchase_propagates_product_not_found ... ok
+test features::sales::usecase::usecase::tests::purchase_overpay_composes_change_and_commits ... ok
+test features::sales::usecase::usecase::tests::purchase_rejects_insufficient_payment ... ok
+test features::sales::usecase::usecase::tests::purchase_rejects_malformed_machine_id_before_port ... ok
+test features::sales::usecase::usecase::tests::purchase_rejects_malformed_product_id_before_port ... ok
+test features::sales::usecase::usecase::tests::purchase_rejects_out_of_stock ... ok
+test platform::config::tests::clamp_i32_keeps_fitting_values_and_saturates_above_max ... ok
+test features::sales::usecase::usecase::tests::purchase_rejects_unsupported_coin_before_reads ... ok
+test platform::config::tests::leaf_bindings_cover_feature_sections ... ok
+test platform::config::tests::leaf_bindings_cover_valkey_ttl ... ok
+test platform::config::tests::leaf_bindings_matches_go_set ... ok
+test platform::config::tests::cors_empty_env_value_becomes_empty_list ... ok
+test platform::config::tests::cors_lists_load_from_yaml_only ... ok
+test platform::config::tests::cors_single_star_env_value_becomes_one_element ... ok
+test platform::config::tests::cors_lists_split_comma_env_values_and_trim_items ... ok
+test platform::config::tests::http_addr_and_grpc_addr_format ... ok
+test platform::config::tests::feature_sections_default_to_disabled_when_absent ... ok
+test platform::config::tests::db_conn_string_has_sslmode ... ok
+test platform::config::tests::db_conn_string_percent_encodes_special_chars ... ok
+test platform::config::tests::load_from_yaml_string_succeeds ... ok
+test platform::db::tests::check_pings_real_database ... ignored, requires a live Postgres at localhost:5432 with user=postgres password=postgres db=app
+test platform::config::tests::validate_cross_rejects_otlp_without_endpoint ... ok
+test platform::errors::tests::code_and_message_are_stable ... ok
+test platform::errors::tests::framework_error_variants_map_codes_and_statuses ... ok
+test platform::config::tests::non_list_leaf_env_override_stays_scalar ... ok
+test platform::errors::tests::from_validation_maps_to_invalid_input ... ok
+test platform::db::tests::checker_name_is_postgres ... ok
+test platform::errors::tests::grpc_code_per_variant ... ok
+test platform::config::tests::validate_cross_rejects_min_gt_max_conns ... ok
+test platform::errors::tests::grpc_status_internal_does_not_leak_cause ... ok
+test platform::config::tests::validate_cross_checks_enabled_catalog_limits ... ok
+test platform::errors::tests::grpc_status_invalid_input_appends_cause ... ok
+test platform::errors::tests::grpc_status_not_found_appends_cause ... ok
+test platform::errors::tests::http_status_per_variant ... ok
+test platform::config::tests::validate_cross_ignores_disabled_feature_limits ... ok
+test platform::health::tests::empty_registry_is_ok ... ok
+test platform::config::tests::validate_rejects_bad_port ... ok
+test platform::health::tests::failing_checker_name_surfaces ... ok
+test platform::health::tests::mixed_run_concurrently ... ok
+test platform::health::tests::passing_checkers_succeed ... ok
+test platform::config::tests::valkey_ttl_defaults_to_30s_when_absent ... ok
+test platform::middleware::cors::tests::default_layer_returns_a_layer ... ok
+test platform::middleware::access_log::tests::propagates_inner_status_when_handler_returns_non_2xx ... ok
+test platform::middleware::recover::tests::non_panicking_handler_passes_through ... ok
+test platform::middleware::access_log::tests::emits_one_log_per_request_with_status_and_latency ... ok
+test platform::middleware::request_id::tests::accepts_valid_charset ... ok
+test platform::middleware::request_id::tests::extension_is_available_to_handlers ... ok
+test platform::middleware::request_id::tests::generates_when_missing ... ok
+test platform::middleware::request_id::tests::rejects_invalid_charset_and_regenerates ... ok
+test platform::middleware::request_id::tests::validator_unit_table ... ok
+test platform::server::grpc_interceptor::tests::extract_status_handles_missing_header_as_none ... ok
+test platform::middleware::request_id::tests::rejects_slash_and_regenerates ... ok
+test platform::middleware::request_id::tests::rejects_overlong_and_regenerates ... ok
+test platform::middleware::recover::tests::panicking_handler_yields_500_internal_body ... ok
+test platform::server::grpc_interceptor::tests::non_zero_status_passes_through_unchanged ... ok
+test platform::server::http::tests::parse_body_limit_bytes_known_units ... ok
+test platform::server::http::tests::parse_body_limit_bytes_lowercase ... ok
+test platform::server::grpc_interceptor::tests::success_passes_through_with_status_zero ... ok
+test platform::server::http::tests::parse_body_limit_bytes_negative_returns_zero ... ok
+test platform::config::tests::valkey_ttl_parses_an_override_and_rejects_zero ... ok
+test platform::server::grpc_interceptor::tests::panic_is_recovered_and_returned_as_internal_status ... ok
+test platform::server::shutdown::tests::with_shutdown_deadline_returns_graceful_result_on_success ... ok
+test platform::server::shutdown::tests::with_shutdown_deadline_runs_fallback_on_timeout ... ok
+test platform::telemetry::tests::metrics_body_on_empty_registry_returns_string_and_does_not_panic ... ok
+test platform::valkey::tests::check_pings_real_valkey ... ignored, requires a live Valkey at valkey.local:6379
+test platform::middleware::cors::tests::preflight_with_default_config_is_allowed ... ok
+test platform::middleware::cors::tests::preflight_with_explicit_methods_and_headers ... ok
+test platform::middleware::cors::tests::preflight_with_explicit_origin_is_allowed ... ok
+test platform::telemetry::tests::resolve_traces_endpoint_appends_v1_traces ... ok
+test platform::telemetry::tests::init_rejects_otlp_with_empty_endpoint ... ok
+test platform::telemetry::tests::init_rejects_otlp_with_malformed_endpoint ... ok
+test platform::valkey::tests::url_with_password ... ok
+test platform::valkey::tests::url_with_special_password ... ok
+test platform::valkey::tests::url_without_password ... ok
+test platform::telemetry::tests::init_with_none_returns_no_tracer_and_usable_registry ... ok
+test platform::telemetry::tests::shutdown_is_safe_with_no_tracer ... ok
+test platform::telemetry::tests::init_can_be_called_repeatedly ... ok
+test platform::telemetry::tests::init_with_otlp_returns_tracer_provider ... ok
+
+test result: ok. 213 passed; 0 failed; 17 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running unittests src/bin/migrate.rs (target/debug/deps/migrate-901420d4a8134a5a)
+
+running 8 tests
+test tests::parse_command_defaults_to_up ... ok
+test tests::parse_command_down_default_count_is_one ... ok
+test tests::parse_command_down_rejects_non_positive ... ok
+test tests::parse_command_down_with_count ... ok
+test tests::parse_command_force_requires_version ... ok
+test tests::parse_command_rejects_unknown ... ok
+test tests::parse_command_force_rejects_non_integer ... ok
+test tests::parse_command_version ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/server-f97648855c1c4dab)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/architecture.rs (target/debug/deps/architecture-5309a0eb9b719524)
+
+running 11 tests
+test scanner_tests::exactly_nine_rules_are_enforced ... ok
+test scanner_tests::expands_braced_groups_with_rename ... ok
+test scanner_tests::expands_plain_paths ... ok
+test scanner_tests::finds_cfg_test_child_modules ... ok
+test scanner_tests::handler_and_impl_rules_enforce_the_new_boundaries ... ok
+test scanner_tests::ignores_comments_and_relative_imports ... ok
+test scanner_tests::module_paths_collapse_mod_rs ... ok
+test scanner_tests::repository_interface_rule_excludes_postgres_implementation ... ok
+test scanner_tests::registry_rule_allows_roots_and_di_only ... ok
+test scanner_tests::usecase_rule_allows_interface_but_denies_postgres_impl ... ok
+test architecture_rules_hold ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/e2e.rs (target/debug/deps/e2e-1cf4974d4ba93546)
+
+running 1 test
+test server_end_to_end ... ignored, live-infra e2e; run with --include-ignored after `docker compose up -d` + `task migrate-up`
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+unit exit=0
