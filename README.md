@@ -79,7 +79,8 @@ zercle-rust-template/
 │       ├── sales/              # purchases: price a sale, compose change, commit
 │       └── reporting/          # read-only cross-feature GET /reports/summary (no migrations)
 │           # catalog, machines, sales, and reporting each repeat the layer layout below:
-│           # unit tests live beside each module as whole-file <module>/tests.rs (live suites: integration.rs)
+│           # unit tests live beside the code they cover: whole-file <module>/tests.rs in
+│           # di/handler/usecase/repository; contract/domain inline; live suites: integration.rs
 │           ├── contract/       # inbound wire types (LEAF; published via crate::api::v1)
 │           ├── domain/         # entities + sentinel errors (innermost)
 │           ├── repository/     # outbound repository interface (Repository trait)
