@@ -46,6 +46,13 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// Map a `validator` failure to the shared `INVALID_INPUT` boundary error.
+    pub fn from_validation(e: validator::ValidationErrors) -> Self {
+        Self::InvalidInput {
+            cause: Some(anyhow::Error::msg(e.to_string())),
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Self::NotFound { .. } => errcodes::NOT_FOUND,
@@ -272,6 +279,15 @@ mod tests {
             "expected cause to appear in InvalidInput message: {}",
             status.message()
         );
+    }
+
+    #[test]
+    fn from_validation_maps_to_invalid_input() {
+        let mut e = validator::ValidationErrors::new();
+        e.add("name", validator::ValidationError::new("required"));
+        let err = AppError::from_validation(e);
+        assert_eq!(err.code(), errcodes::INVALID_INPUT);
+        assert_eq!(err.http_status(), StatusCode::BAD_REQUEST);
     }
 
     #[test]

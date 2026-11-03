@@ -34,6 +34,10 @@ pub type GrpcStack =
 /// A tonic router carrying every registered feature gRPC service.
 pub type GrpcRouter = tonic::transport::server::Router<GrpcStack>;
 
+/// 4 MiB cap on incoming + outgoing gRPC message bodies (Go
+/// `grpc.MaxRecvMsgSize`/`MaxSendMsgSize` parity).
+pub const GRPC_MESSAGE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
+
 /// Everything a feature contributes to the running application: its axum HTTP
 /// routes (already nested under `/api/v1`) and its tonic gRPC services.
 ///
@@ -46,6 +50,16 @@ pub struct Wired {
     /// registry threads one accumulating router through every feature (each
     /// chains `add_service`), starting from [`empty_grpc_router`].
     pub grpc: GrpcRouter,
+}
+
+impl Wired {
+    /// A feature that registers nothing: empty HTTP router, gRPC router untouched.
+    pub fn empty(grpc: GrpcRouter) -> Self {
+        Self {
+            http: Router::new(),
+            grpc,
+        }
+    }
 }
 
 /// Seed for the registry's gRPC fold: the platform tonic builder carrying the
