@@ -464,6 +464,12 @@ impl Config {
     }
 }
 
+/// Config leaves are `u32`; the port boundary speaks `i32`. Saturate rather
+/// than wrap (validation bounds these well below `i32::MAX` anyway).
+pub fn clamp_i32(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
+}
+
 /// catalog limit checks (Go `validateCatalog`, port-spec §4).
 fn validate_catalog(c: &CatalogConfig) -> anyhow::Result<()> {
     if c.default_page_size < 1 {
@@ -656,6 +662,13 @@ fn leaf_bindings() -> Vec<(&'static str, &'static str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clamp_i32_keeps_fitting_values_and_saturates_above_max() {
+        assert_eq!(clamp_i32(42), 42);
+        assert_eq!(clamp_i32(i32::MAX as u32), i32::MAX);
+        assert_eq!(clamp_i32(u32::MAX), i32::MAX);
+    }
 
     fn sample_yaml() -> &'static str {
         r#"

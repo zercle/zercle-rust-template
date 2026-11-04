@@ -229,13 +229,17 @@ Testing & QA).
 
 ## Testing & QA
 
-- **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live in-module under
-  `#[cfg(test)]`; they run with `cargo test --all-targets`. Integration tests are live-infra
-  suites inside `#[cfg(test)] mod integration` (catalog's in `repository/postgres/integration.rs`,
-  sales' and reporting's at the `di` composition edge) gated by `#[ignore]`. The e2e test is
-  `tests/e2e.rs`.
+- **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live beside the code they
+  cover, run with `cargo test --all-targets`: whole-file `#[cfg(test)] mod tests;` modules
+  (`<module>/tests.rs`) in the `di`/`handler`/`usecase`/`repository` layers, while `contract` and
+  `domain` keep them inline — the architecture gate exempts whole-file test modules, so those two
+  layers' tests must stay inside its scan. Live-infra suites are whole-file modules too, with cases
+  `#[ignore]`-gated: `repository/postgres/integration.rs` for catalog and machines,
+  `di/integration.rs` for reporting, and the ignored cases in sales' `repository/postgres/tests.rs`
+  and `di/tests.rs`. The e2e test is `tests/e2e.rs`.
 - **Ignore-gating = Go build tags.** Every live-infra test is `#[ignore]`; plain `cargo test`
   compiles but does not run it. `--include-ignored` runs the full live suite (CI integration job).
+  One catalog case is not live-infra and stays ungated: `default_cache_ttl_matches_spec_default`.
 - **Integration setup.** No testcontainers: the suites read `DATABASE_URL` (a local throwaway
   database), apply the registry's merged migrations in-suite, and `TRUNCATE` between cases. They
   **hard-fail** (never skip) when infra is missing, and a **production guard** panics on

@@ -79,6 +79,8 @@ zercle-rust-template/
 │       ├── sales/              # purchases: price a sale, compose change, commit
 │       └── reporting/          # read-only cross-feature GET /reports/summary (no migrations)
 │           # catalog, machines, sales, and reporting each repeat the layer layout below:
+│           # unit tests live beside the code they cover: whole-file <module>/tests.rs in
+│           # di/handler/usecase/repository; contract/domain inline
 │           ├── contract/       # inbound wire types (LEAF; published via crate::api::v1)
 │           ├── domain/         # entities + sentinel errors (innermost)
 │           ├── repository/     # outbound repository interface (Repository trait)
@@ -267,7 +269,7 @@ task migrate-up
 task test-e2e          # or: cargo test --test e2e -- --include-ignored
 ```
 
-`cargo test` runs the unit suites and the architecture gates; the integration suites are gated
+`cargo test` runs the unit suites and the architecture gates; the live-infra cases are gated
 behind `#[ignore]` (the Rust equivalent of Go's build tags) and only run with `--include-ignored`.
 Unlike the self-skipping e2e test, the integration suites **hard-fail** when their infrastructure
 is missing and **refuse to run against production** (`APP_ENVIRONMENT=production`) or a non-local

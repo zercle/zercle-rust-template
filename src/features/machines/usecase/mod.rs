@@ -12,5 +12,5 @@ pub mod usecase;
 
 #[cfg(test)]
 pub use service::MockService;
-pub use service::{Service, SharedService};
+pub use service::Service;
 pub use usecase::Usecase;

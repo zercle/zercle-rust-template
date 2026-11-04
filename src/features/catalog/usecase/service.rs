@@ -6,8 +6,6 @@
 //! usecase-depends-on-domain-repository-contract): this feature's domain, port,
 //! and contract only.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 
 use crate::features::catalog::contract::{
@@ -24,6 +22,3 @@ pub trait Service: Send + Sync {
     async fn get(&self, id: String) -> Result<ProductResponse, Error>;
     async fn list(&self, req: ListProductsRequest) -> Result<ListProductsResponse, Error>;
 }
-
-/// `Arc`-shared service handle used by handlers and `di`.
-pub type SharedService = Arc<dyn Service>;
