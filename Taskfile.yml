@@ -145,9 +145,9 @@ tasks:
           echo "edit both files by hand; with sqlx-cli installed, \`sqlx migrate add -r --source $dir {{.NAME}}\` is the per-directory alternative (timestamp version)."
 
   proto:
-    desc: Regenerate protobuf/gRPC code. Handled automatically by build.rs (tonic-build) on every cargo build; this task is a no-op kept for parity with the Go Taskfile.
+    desc: Regenerate protobuf/gRPC code. Handled automatically by build.rs (tonic-prost-build) on every cargo build; this task is a no-op kept for parity with the Go Taskfile.
     cmds:
-      - 'echo "proto: handled by build.rs (tonic-build). Run \`cargo build\` to regenerate."'
+      - 'echo "proto: handled by build.rs (tonic-prost-build). Run \`cargo build\` to regenerate."'
 
   docker-build:
     desc: Build the server container image (multi-stage, musl static, distroless/static final).

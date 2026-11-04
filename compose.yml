@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: docker.io/library/postgres:18-alpine
+    image: mirror.gcr.io/postgres:18-alpine
     container_name: zercle-rust-template-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -21,7 +21,7 @@ services:
       - zercle-rust-template
 
   valkey:
-    image: docker.io/valkey/valkey:9-alpine
+    image: mirror.gcr.io/valkey/valkey:9-alpine
     container_name: zercle-rust-template-valkey
     command: >
       sh -c "valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru $${VALKEY_PASSWORD:+--requirepass \"$$VALKEY_PASSWORD\"}"
@@ -97,7 +97,7 @@ services:
       - zercle-rust-template
 
   otel-collector:
-    image: docker.io/otel/opentelemetry-collector-contrib:0.114.0
+    image: mirror.gcr.io/otel/opentelemetry-collector-contrib:0.114.0
     container_name: zercle-rust-template-otel-collector
     profiles:
       - observability
@@ -114,7 +114,7 @@ services:
       - zercle-rust-template
 
   prometheus:
-    image: docker.io/prom/prometheus:v3.0.1
+    image: mirror.gcr.io/prom/prometheus:v3.0.1
     container_name: zercle-rust-template-prometheus
     profiles:
       - observability
@@ -132,7 +132,7 @@ services:
       - zercle-rust-template
 
   grafana:
-    image: docker.io/grafana/grafana:11.4.0
+    image: mirror.gcr.io/grafana/grafana:11.4.0
     container_name: zercle-rust-template-grafana
     profiles:
       - observability
