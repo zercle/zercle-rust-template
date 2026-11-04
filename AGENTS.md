@@ -104,7 +104,7 @@ weaken the rule**:
   reversible pair with the next free global version into
   `src/features/<FEATURE>/repository/postgres/migrations` (`sqlx migrate add -r` is the noted
   per-directory alternative when sqlx-cli is installed).
-- `task proto` — no-op; proto regeneration is handled by `build.rs` (tonic-build) on every
+- `task proto` — no-op; proto regeneration is handled by `build.rs` (tonic-prost-build) on every
   `cargo build`.
 - `task docker-build` / `docker-build-migrate` — build the server / migrate container image.
 - `task cover` — `cargo-llvm-cov` coverage (lcov + HTML) with a 60% line gate.
@@ -146,7 +146,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/it_catalog \
   `repository/postgres/migrations/` (embedded at compile time). The sqlx query macros are
   **not** used (queries are runtime-checked `sqlx::query`), so there is **no `AutoMigrate`-equivalent
   and no offline `.sqlx` cache**: schema changes go through a migration file, never a runtime sync.
-- **Generated code — regenerate, never hand-edit.** `build.rs` runs tonic-build over every
+- **Generated code — regenerate, never hand-edit.** `build.rs` runs tonic-prost-build over every
   `proto/*/v1/*.proto` (`build_server(true)`, `build_client(false)`); the generated modules live in
   `OUT_DIR` and are pulled in by `tonic::include_proto!("catalog.v1")` (package dots become
   underscores: `catalog_v1`) in each feature's `handler/grpc.rs`. `cargo build` regenerates.
@@ -214,14 +214,15 @@ Testing & QA).
 ## Runtime/Tooling Preferences
 
 - **Rust** stable, pinned by `rust-toolchain.toml` (components `rustfmt`, `clippy`); the crate is
-  edition 2024 with `rust-version = 1.85` in `Cargo.toml`. CI uses `dtolnay/rust-toolchain`.
-- **protoc** is required by `build.rs` (tonic-build has no bundled compiler); CI installs it via
+  edition 2024 with `rust-version = 1.94` in `Cargo.toml`. CI uses `dtolnay/rust-toolchain`.
+- **protoc** is required by `build.rs` (`tonic-prost-build` has no bundled compiler); CI installs it via
   `arduino/setup-protoc`. The Containerfiles install `protobuf-compiler`.
-- Key deps: `axum` 0.8, `tonic` 0.12 + `prost` 0.13, `sqlx` 0.8 (runtime-tokio-rustls, postgres,
-  uuid, time, macros, migrate), `redis` 0.27 (tokio-rustls-comp, connection-manager), `config` 0.14,
-  `validator` 0.18, `tracing` + `tracing-subscriber` + `opentelemetry*` + `opentelemetry-prometheus`,
-  `thiserror`, `anyhow`, `uuid`, `time`, `humantime`. Dev: `mockall`, `pretty_assertions`, `reqwest`,
-  `tower`. Build: `tonic-build`.
+- Key deps: `axum` 0.8, `tonic` 0.14 + `tonic-prost` 0.14 + `prost` 0.14, `sqlx` 0.9 (runtime-tokio,
+  tls-rustls-ring, postgres, uuid, time, macros, migrate), `redis` 1 (tokio-rustls-comp,
+  connection-manager), `config` 0.15, `validator` 0.21, `tracing` + `tracing-subscriber` +
+  `opentelemetry` 0.33 + `opentelemetry-prometheus` 0.33, `prometheus` 0.14, `thiserror` 2,
+  `anyhow`, `uuid`, `time`, `humantime`. Dev: `mockall` 0.15, `pretty_assertions`, `reqwest` 0.13,
+  `tower`. Build: `tonic-prost-build` 0.14.
 - Local services: `docker compose up -d postgres valkey` (`compose.yml` uses `postgres:18-alpine`
   and `valkey/valkey:9-alpine`). `Containerfile` is a two-stage musl-static →
   `distroless/static` non-root server image; `Containerfile.migrate` mirrors it for the `migrate`
@@ -229,13 +230,17 @@ Testing & QA).
 
 ## Testing & QA
 
-- **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live in-module under
-  `#[cfg(test)]`; they run with `cargo test --all-targets`. Integration tests are live-infra
-  suites inside `#[cfg(test)] mod integration` (catalog's in `repository/postgres/integration.rs`,
-  sales' and reporting's at the `di` composition edge) gated by `#[ignore]`. The e2e test is
-  `tests/e2e.rs`.
+- **Tiers.** Unit tests are hermetic (mockall mocks, no infra) and live beside the code they
+  cover, run with `cargo test --all-targets`: whole-file `#[cfg(test)] mod tests;` modules
+  (`<module>/tests.rs`) in the `di`/`handler`/`usecase`/`repository` layers, while `contract` and
+  `domain` keep them inline — the architecture gate exempts whole-file test modules, so those two
+  layers' tests must stay inside its scan. Live-infra suites are whole-file modules too, with cases
+  `#[ignore]`-gated: `repository/postgres/integration.rs` for catalog and machines,
+  `di/integration.rs` for reporting, and the ignored cases in sales' `repository/postgres/tests.rs`
+  and `di/tests.rs`. The e2e test is `tests/e2e.rs`.
 - **Ignore-gating = Go build tags.** Every live-infra test is `#[ignore]`; plain `cargo test`
   compiles but does not run it. `--include-ignored` runs the full live suite (CI integration job).
+  One catalog case is not live-infra and stays ungated: `default_cache_ttl_matches_spec_default`.
 - **Integration setup.** No testcontainers: the suites read `DATABASE_URL` (a local throwaway
   database), apply the registry's merged migrations in-suite, and `TRUNCATE` between cases. They
   **hard-fail** (never skip) when infra is missing, and a **production guard** panics on

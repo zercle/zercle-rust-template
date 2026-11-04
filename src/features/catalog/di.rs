@@ -46,7 +46,7 @@ impl From<Error> for AppError {
 /// nothing.
 pub fn register(cfg: &Config, db: PgPool) -> Wired {
     if !cfg.catalog.enabled {
-        return empty_wired(crate::platform::server::empty_grpc_router());
+        return Wired::empty(crate::platform::server::empty_grpc_router());
     }
     let repo: Arc<dyn Repository> = Arc::new(PgRepository::new(db));
     build(cfg, repo, crate::platform::server::empty_grpc_router())
@@ -65,7 +65,7 @@ pub fn register_with_grpc(
     grpc: GrpcRouter,
 ) -> Wired {
     if !cfg.catalog.enabled {
-        return empty_wired(grpc);
+        return Wired::empty(grpc);
     }
     let postgres: Arc<dyn Repository> = Arc::new(PgRepository::new(db));
     let repo: Arc<dyn Repository> =
@@ -73,34 +73,19 @@ pub fn register_with_grpc(
     build(cfg, repo, grpc)
 }
 
-/// A disabled feature contributes nothing (empty HTTP router, gRPC router
-/// untouched) — Go's `di.Register` returning early.
-fn empty_wired(grpc: GrpcRouter) -> Wired {
-    Wired {
-        http: Router::new(),
-        grpc,
-    }
-}
-
 /// Build the use case + handlers for an already-chosen repository.
 fn build(cfg: &Config, repo: Arc<dyn Repository>, grpc: GrpcRouter) -> Wired {
     let service: Arc<dyn Service> = Arc::new(Usecase::new(
         repo,
-        clamp_i32(cfg.catalog.default_page_size),
-        clamp_i32(cfg.catalog.max_page_size),
-        clamp_i32(cfg.catalog.max_name_length),
+        crate::platform::config::clamp_i32(cfg.catalog.default_page_size),
+        crate::platform::config::clamp_i32(cfg.catalog.max_page_size),
+        crate::platform::config::clamp_i32(cfg.catalog.max_name_length),
     ));
 
     let http = Router::new().nest("/api/v1", http::routes(service.clone()));
     let grpc = grpc.add_service(grpc::server(grpc::GrpcServer::new(service)));
 
     Wired { http, grpc }
-}
-
-/// Config limits are `u32`; the use case speaks `i32`. Saturate rather than
-/// wrap (validation bounds these well below `i32::MAX` anyway).
-fn clamp_i32(value: u32) -> i32 {
-    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 /// Embedded migrations this feature owns, in the single global version
@@ -114,64 +99,4 @@ pub fn migrations() -> Vec<sqlx::migrate::Migration> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::platform::errors::errcodes;
-    use sqlx::postgres::PgPoolOptions;
-
-    fn lazy_pool() -> PgPool {
-        PgPoolOptions::new()
-            .connect_lazy("postgres://localhost/none")
-            .expect("lazy pool")
-    }
-
-    fn cfg_enabled(enabled: bool) -> Config {
-        let yaml = format!(
-            r#"
-app: {{ name: t, environment: dev, host: 0.0.0.0, port: 8080 }}
-http: {{ host: 0.0.0.0, port: 8080, body_limit: "1M" }}
-grpc: {{ host: 0.0.0.0, port: 50051 }}
-db: {{ host: localhost, port: 5432, name: app, user: postgres, password: postgres, ssl_mode: disable, max_conns: 1, min_conns: 0 }}
-valkey: {{ host: localhost, port: 6379, db: 0 }}
-otel: {{ exporter: none, service_name: t, sampling: 1.0 }}
-log: {{ level: info, format: json }}
-catalog: {{ enabled: {enabled} }}
-"#
-        );
-        ::config::Config::builder()
-            .add_source(::config::File::from_str(&yaml, ::config::FileFormat::Yaml))
-            .build()
-            .expect("build")
-            .try_deserialize()
-            .expect("deserialize")
-    }
-
-    #[test]
-    fn domain_sentinels_map_to_boundary_codes() {
-        let code = |e: Error| AppError::from(e).code().to_string();
-        assert_eq!(code(Error::ProductNotFound), errcodes::NOT_FOUND);
-        assert_eq!(code(Error::InvalidId), errcodes::INVALID_INPUT);
-        assert_eq!(code(Error::InvalidProductName), errcodes::INVALID_INPUT);
-        assert_eq!(code(Error::InvalidPrice), errcodes::INVALID_INPUT);
-        assert_eq!(code(Error::Internal { cause: None }), errcodes::INTERNAL);
-    }
-
-    #[test]
-    fn migrations_own_version_one() {
-        let m = migrations();
-        assert!(m.iter().any(|m| m.version == 1), "catalog owns version 1");
-    }
-
-    #[tokio::test]
-    async fn disabled_feature_registers_nothing() {
-        let wired = register(&cfg_enabled(false), lazy_pool());
-        assert!(!wired.http.has_routes());
-    }
-
-    #[tokio::test]
-    async fn enabled_feature_registers_http_routes() {
-        // The lazy pool never connects; `register` only constructs adapters.
-        let wired = register(&cfg_enabled(true), lazy_pool());
-        assert!(wired.http.has_routes(), "enabled catalog mounts /api/v1");
-    }
-}
+mod tests;

@@ -16,11 +16,11 @@
 use std::sync::OnceLock;
 
 use opentelemetry::{KeyValue, global, trace::TracerProvider as _};
-use opentelemetry_otlp::{SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{ExporterBuildError, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::{
     Resource,
     metrics::SdkMeterProvider,
-    trace::{Sampler, TracerProvider},
+    trace::{Sampler, SdkTracerProvider},
 };
 use prometheus::{Encoder, Registry, TextEncoder};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, prelude::*};
@@ -36,16 +36,16 @@ pub enum TelemetryError {
     #[error("invalid OTLP trace endpoint {0}: {1}")]
     InvalidEndpoint(String, url::ParseError),
     #[error("build OTLP trace exporter: {0}")]
-    BuildExporter(#[source] opentelemetry::trace::TraceError),
+    BuildExporter(#[source] ExporterBuildError),
     #[error("build Prometheus exporter: {0}")]
-    BuildPrometheus(#[source] opentelemetry_sdk::metrics::MetricError),
+    BuildPrometheus(#[source] opentelemetry_sdk::error::OTelSdkError),
 }
 
 /// Handle returned by [`init`]; passed to [`shutdown`].
 #[derive(Debug)]
 pub struct Telemetry {
     /// OTLP tracer provider (`Some` when `cfg.otel.exporter == "otlp"`, otherwise `None`).
-    pub tracer_provider: Option<TracerProvider>,
+    pub tracer_provider: Option<SdkTracerProvider>,
     /// Meter provider (always present so `/metrics` is served even with no OTLP exporter).
     pub meter_provider: SdkMeterProvider,
     /// Prometheus registry the `/metrics` handler encodes.
@@ -89,7 +89,7 @@ pub fn init(cfg: &Config) -> Result<Telemetry, TelemetryError> {
         let subscriber = registry_with_otel.with(env_filter).with(fmt_layer);
         install_global(subscriber);
         // Install a no-op tracer provider so `global::tracer(...)` never panics.
-        global::set_tracer_provider(TracerProvider::default());
+        global::set_tracer_provider(opentelemetry::trace::noop::NoopTracerProvider::new());
     }
 
     // Hold the global meter provider as the process-wide default so application code that uses
@@ -123,7 +123,7 @@ fn resolve_traces_endpoint(endpoint: &str) -> Result<String, TelemetryError> {
 /// Build (and register) the tracer provider; return the base registry to chain layers onto.
 fn build_tracer(
     cfg: &Config,
-) -> Result<(Option<TracerProvider>, tracing_subscriber::Registry), TelemetryError> {
+) -> Result<(Option<SdkTracerProvider>, tracing_subscriber::Registry), TelemetryError> {
     let registry = tracing_subscriber::registry();
 
     if cfg.otel.exporter == "none" {
@@ -137,14 +137,22 @@ fn build_tracer(
         .build()
         .map_err(TelemetryError::BuildExporter)?;
 
-    let resource = Resource::new(vec![KeyValue::new(
-        "service.name",
-        cfg.otel.service_name.clone(),
-    )]);
+    let resource = Resource::builder_empty()
+        .with_attributes([KeyValue::new("service.name", cfg.otel.service_name.clone())])
+        .build();
     let sampler = Sampler::TraceIdRatioBased(cfg.otel.sampling);
 
-    let provider = TracerProvider::builder()
-        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
+    // The batch processor exports on a dedicated Tokio task, so the OTLP HTTP
+    // exporter's reqwest client always runs inside a runtime context.
+    let processor =
+        opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor::builder(
+            exporter,
+            opentelemetry_sdk::runtime::Tokio,
+        )
+        .build();
+
+    let provider = SdkTracerProvider::builder()
+        .with_span_processor(processor)
         .with_resource(resource)
         .with_sampler(sampler)
         .build();
@@ -184,10 +192,8 @@ where
 /// Flush + shutdown providers, best-effort. Errors are logged at `error` level.
 pub fn shutdown(telemetry: Telemetry) {
     if let Some(tracer_provider) = telemetry.tracer_provider {
-        for result in tracer_provider.force_flush() {
-            if let Err(e) = result {
-                tracing::error!(error = %e, "telemetry: tracer force_flush failed");
-            }
+        if let Err(e) = tracer_provider.force_flush() {
+            tracing::error!(error = %e, "telemetry: tracer force_flush failed");
         }
         if let Err(e) = tracer_provider.shutdown() {
             tracing::error!(error = %e, "telemetry: tracer shutdown failed");
@@ -200,12 +206,12 @@ pub fn shutdown(telemetry: Telemetry) {
         tracing::error!(error = %e, "telemetry: meter shutdown failed");
     }
 
-    // Shut down the process-wide global tracer provider registered via
-    // `opentelemetry::global::set_tracer_provider` in `init`, releasing its
-    // resources and flushing any remaining batched exports. (The global meter
-    // provider in opentelemetry 0.27 has no top-level shutdown; the local
+    // The global tracer provider registered via
+    // `opentelemetry::global::set_tracer_provider` in `init` is the same
+    // provider instance, so the explicit shutdown above already released its
+    // resources and flushed any remaining batched exports. (The global meter
+    // provider has no top-level shutdown; the local
     // `telemetry.meter_provider.shutdown()` above is the only knob.)
-    opentelemetry::global::shutdown_tracer_provider();
 }
 
 /// Render the Prometheus text exposition format for the `/metrics` endpoint.

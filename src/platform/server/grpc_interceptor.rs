@@ -34,11 +34,10 @@ use std::{
 
 use futures::{FutureExt, future::BoxFuture};
 use http::{HeaderMap, Request, Response};
-use tonic::{Status, body::BoxBody};
+use tonic::{Status, body::Body as GrpcBody};
 use tower::{Layer, Service};
 
 const GRPC_STATUS_HEADER: &str = "grpc-status";
-type GrpcBody = BoxBody;
 type GrpcError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Tower layer that wraps a tonic gRPC service. See module docs.
@@ -261,7 +260,7 @@ mod tests {
         fn call(&mut self, _req: Request<GrpcBody>) -> Self::Future {
             let resp = Response::builder()
                 .header(GRPC_STATUS_HEADER, "0")
-                .body(tonic::body::empty_body())
+                .body(tonic::body::Body::default())
                 .expect("build response");
             std::future::ready(Ok(resp))
         }
@@ -301,7 +300,7 @@ mod tests {
         fn call(&mut self, _req: Request<GrpcBody>) -> Self::Future {
             let resp = Response::builder()
                 .header(GRPC_STATUS_HEADER, "5")
-                .body(tonic::body::empty_body())
+                .body(tonic::body::Body::default())
                 .expect("build response");
             std::future::ready(Ok(resp))
         }
@@ -311,7 +310,7 @@ mod tests {
         Request::builder()
             .uri(path)
             .header("content-type", "application/grpc")
-            .body(tonic::body::empty_body())
+            .body(tonic::body::Body::default())
             .expect("build request")
     }
 
