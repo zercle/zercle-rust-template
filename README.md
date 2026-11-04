@@ -9,8 +9,8 @@ layout, error envelope, and executable dependency gates.
 
 ## Prerequisites
 
-- **Rust** stable (pinned via `rust-toolchain.toml`; edition 2024, `rust-version` 1.85)
-- **protoc** (for the proto compile in `build.rs`; tonic-build has no bundled compiler)
+- **Rust** stable (pinned via `rust-toolchain.toml`; edition 2024, `rust-version` 1.94)
+- **protoc** (for the proto compile in `build.rs`; `tonic-prost-build` has no bundled compiler)
 - **Docker/Podman**
 - [Task](https://taskfile.dev/installation/) (the command runner; raw `cargo` also works)
 - PostgreSQL 18+ (via container)
@@ -93,7 +93,7 @@ zercle-rust-template/
 │   ├── common/mod.rs           # shared helpers for integration + e2e tests
 │   ├── architecture.rs         # executable dependency gates (layering rules)
 │   └── e2e.rs                  # e2e: boots the full app (self-skips w/o infra)
-├── build.rs                    # tonic-build: compile every proto/*/v1/*.proto
+├── build.rs                    # tonic-prost-build: compile every proto/*/v1/*.proto
 ├── Cargo.toml
 ├── Cargo.lock                  # committed for reproducible builds
 ├── rust-toolchain.toml

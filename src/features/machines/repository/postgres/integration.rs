@@ -22,6 +22,12 @@ use crate::platform::errors::errcodes;
 
 const DB_NAME: &str = "it_machines";
 
+/// Static DDL: sqlx 0.9 requires `&'static str` (or an audited
+/// `AssertSqlSafe`) for every query string, and the database name is a
+/// compile-time constant.
+const DROP_DB_QUERY: &str = "DROP DATABASE IF EXISTS \"it_machines\" WITH (FORCE)";
+const CREATE_DB_QUERY: &str = "CREATE DATABASE \"it_machines\"";
+
 /// Shared DSN resolution (`DATABASE_URL` else the `DB_*` config leaves),
 /// then pin the isolated test database name so the suite never touches the
 /// developer's `app` database.
@@ -60,13 +66,11 @@ async fn machines_postgres_integration() {
         .expect("connect admin Postgres (is `docker compose up postgres` running?)");
 
     // Fresh isolated database.
-    sqlx::query(&format!(
-        "DROP DATABASE IF EXISTS \"{DB_NAME}\" WITH (FORCE)"
-    ))
-    .execute(&admin_pool)
-    .await
-    .expect("drop stale it_machines");
-    sqlx::query(&format!("CREATE DATABASE \"{DB_NAME}\""))
+    sqlx::query(DROP_DB_QUERY)
+        .execute(&admin_pool)
+        .await
+        .expect("drop stale it_machines");
+    sqlx::query(CREATE_DB_QUERY)
         .execute(&admin_pool)
         .await
         .expect("create it_machines");
@@ -176,10 +180,8 @@ async fn machines_postgres_integration() {
 
     // Drop the isolated database after the suite.
     pool.close().await;
-    sqlx::query(&format!(
-        "DROP DATABASE IF EXISTS \"{DB_NAME}\" WITH (FORCE)"
-    ))
-    .execute(&admin_pool)
-    .await
-    .expect("drop it_machines");
+    sqlx::query(DROP_DB_QUERY)
+        .execute(&admin_pool)
+        .await
+        .expect("drop it_machines");
 }

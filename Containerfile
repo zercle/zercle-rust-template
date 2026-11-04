@@ -19,7 +19,7 @@
 #                --build-arg MUSL_GCC=aarch64-unknown-linux-musl-gcc \
 #                -f Containerfile -t app .
 #
-# The crate stack is fully rust-native (sqlx runtime-tokio-rustls, redis
+# The crate stack is fully rust-native (sqlx tls-rustls-ring, redis
 # tokio-rustls-comp), so we link against musl libc instead of glibc and
 # produce a truly static binary that mirrors the Go template's
 # `CGO_ENABLED=0` static build and lets the final image be
@@ -43,7 +43,7 @@ FROM messense/rust-musl-cross:${RUST_MUSL_TAG} AS builder
 
 WORKDIR /build
 
-# build.rs invokes protoc via tonic-build. Install protobuf-compiler.
+# build.rs invokes protoc via tonic-prost-build. Install protobuf-compiler.
 USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends protobuf-compiler \
@@ -59,7 +59,7 @@ ENV CC_${MUSL_TARGET_UNDERSCORE}=${MUSL_GCC} \
 
 # ---- dependency cache layer ----
 # Copy manifests first so a source-only change does not bust the cargo
-# registry/cache layer. build.rs is included so tonic-build changes also
+# registry/cache layer. build.rs is included so tonic-prost-build changes also
 # invalidate the cache correctly.
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src

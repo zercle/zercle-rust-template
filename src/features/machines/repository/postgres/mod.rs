@@ -41,7 +41,13 @@ struct MachineRow {
     updated_at: OffsetDateTime,
 }
 
-const SELECT_COLUMNS: &str = "id, label, coin_bank::text AS coin_bank, created_at, updated_at";
+/// Static queries: sqlx 0.9 requires a `&'static str` (or an audited
+/// `AssertSqlSafe`) for every query string.
+const SELECT_BY_ID_QUERY: &str = "SELECT id, label, coin_bank::text AS coin_bank, created_at, updated_at \
+     FROM machines WHERE id = $1";
+
+const LIST_QUERY: &str = "SELECT id, label, coin_bank::text AS coin_bank, created_at, updated_at \
+     FROM machines ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2";
 
 fn row_to_machine(row: MachineRow) -> Result<Machine, Error> {
     let coin_bank: CoinBank = serde_json::from_str(&row.coin_bank).map_err(map_serde_error)?;
@@ -74,8 +80,7 @@ impl Repository for PgRepository {
     }
 
     async fn get_by_id(&self, id: Uuid) -> Result<Machine, Error> {
-        let sql = format!("SELECT {SELECT_COLUMNS} FROM machines WHERE id = $1");
-        let row = sqlx::query_as::<_, MachineRow>(&sql)
+        let row = sqlx::query_as::<_, MachineRow>(SELECT_BY_ID_QUERY)
             .bind(id)
             .fetch_optional(&self.pool)
             .await
@@ -85,11 +90,7 @@ impl Repository for PgRepository {
     }
 
     async fn list(&self, limit: i32, offset: i32) -> Result<Vec<Machine>, Error> {
-        let sql = format!(
-            "SELECT {SELECT_COLUMNS} FROM machines \
-             ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2"
-        );
-        let rows = sqlx::query_as::<_, MachineRow>(&sql)
+        let rows = sqlx::query_as::<_, MachineRow>(LIST_QUERY)
             .bind(limit)
             .bind(offset)
             .fetch_all(&self.pool)
